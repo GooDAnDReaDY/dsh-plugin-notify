@@ -1,0 +1,3 @@
+- insert:
+    - id: plugin-notify
+      name: '@goodandready/dsh-plugin-notify'
