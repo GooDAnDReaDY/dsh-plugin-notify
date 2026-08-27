@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import Schema from '@deepseek-ai/schemastery';
-export const name = 'plugin-notify';
+export const name = '@goodandready-private/dsh-plugin-notify';
 // Dependency on the session service: `session/event` only exists once a
 // SessionStore is composed, and this plugin consumes the durable firehose.
 export const inject = ['sessions'];

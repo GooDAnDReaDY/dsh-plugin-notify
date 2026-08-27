@@ -1,4 +1,4 @@
-# @dsh-suite/plugin-notify
+# @goodandready-private/dsh-plugin-notify
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [💬 问题反馈](https://github.com/whyihaveyou/dsh-suite/issues/new?template=plugin-feedback.yml&labels=feedback&plugin=plugin-notify)
@@ -40,10 +40,10 @@
 ## 安装 / Install
 
 ```sh
-dsh plugin --profile <name> add @dsh-suite/plugin-notify
+dsh plugin --profile <name> add @goodandready-private/dsh-plugin-notify
 ```
 
-（本地开发：`dsh plugin --profile <name> add ./packages/plugins/plugin-notify`）
+For local development, build a package artifact and install it only in the isolated test profile; production uses the published private package.
 
 ## 配置 / Configuration
 
@@ -53,7 +53,7 @@ Add a `config` block to this plugin's row in the profile's `cordis.patch.yml`:
 
 ```yaml
 - id: plugin-notify
-  name: '@dsh-suite/plugin-notify'
+  name: '@goodandready-private/dsh-plugin-notify'
   config:
     webhooks:
       feishu: 'https://open.feishu.cn/open-apis/bot/v2/hook/xxxx'   # 飞书
@@ -91,9 +91,9 @@ Feishu/WeCom/DingTalk send a text card; Slack `{ text }`; Discord `{ content }`;
 
 ## 验证 / Verification
 
-- ✅ 纯 ESM 编译（`pnpm build`）
+- ✅ Published ESM bundle is checked by the package smoke tests
 - ✅ `dsh.bundle` + `cordis.patch.yml` 装载进真实 DSH profile（`--dump-config` 含本行）
-- ✅ `turn/end` → 通知派发路径（缺省无 key 场景，`turn/end(reason=error)` 已触发）
+- ✅ `turn/end` → 通知派发路径（`task_done` и `error` scenarios are covered）
 - ⚠️ 真实 IM 投递（需真实 webhook URL 与外部网络）——未闭环，见下
 
 Blocked / not closed: 本环境无真实 webhook 地址，远程投递只验证到「POST 已发起、失败仅
