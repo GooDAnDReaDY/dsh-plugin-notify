@@ -46,7 +46,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GooDAnDReaDY/dsh-plugin-notify.git"
+    "url": "git+https://github.com/goodandready-private/dsh-plugin-notify.git"
   },
   "homepage": "https://github.com/goodandready-private/dsh-plugin-notify#readme",
   "bugs": {
