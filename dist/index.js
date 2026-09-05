@@ -1,28 +1,37 @@
 import { spawn } from 'node:child_process';
 import Schema from '@deepseek-ai/schemastery';
+import { credentialRef } from '@deepseek-ai/dsh-credentials';
+
 export const name = '@goodandready-private/dsh-plugin-notify';
-// Dependency on the session service: `session/event` only exists once a
-// SessionStore is composed, and this plugin consumes the durable firehose.
-export const inject = ['sessions'];
+/** Settings namespace shared with the Web settings card. */
+export const NS = '@goodandready-private/dsh-plugin-notify';
+
+// Session firehose + credentials (webhook URL refs) + settings scope for the card.
+export const inject = ['sessions', 'credentials', 'settings'];
+
+const webhookRef = (label) => Schema.string()
+    .role('credential-ref')
+    .description(`${label}: DSH credential name whose value is the full webhook URL (not the URL itself). Empty disables the channel.`);
+
 export const Config = Schema.object({
     webhooks: Schema.object({
-        feishu: Schema.string().description('飞书自定义机器人 webhook URL（…/bot/v2/hook/…）'),
-        wecom: Schema.string().description('企业微信群机器人 webhook URL（…/cgi-bin/webhook/send?key=…）'),
-        dingtalk: Schema.string().description('钉钉群机器人 webhook URL（…/robot/send?access_token=…）'),
-        slack: Schema.string().description('Slack Incoming Webhook URL'),
-        discord: Schema.string().description('Discord Webhook URL'),
-        custom: Schema.string().description('自定义通用 webhook URL（POST JSON，含 text + 元数据）'),
-    }).description('各 IM 通道的 webhook 地址，留空即不发送'),
+        feishu: webhookRef('Feishu custom bot'),
+        wecom: webhookRef('WeCom group bot'),
+        dingtalk: webhookRef('DingTalk group bot'),
+        slack: webhookRef('Slack Incoming Webhook'),
+        discord: webhookRef('Discord webhook'),
+        custom: webhookRef('Custom generic webhook (POST JSON)'),
+    }).description('Per-channel credential refs for webhook URLs; leave empty to disable'),
     events: Schema.array(Schema.string())
-        .description('触发通知的事件：task_done（回合完成）/ error（出错） / approval_requested（待审批）'),
-    local: Schema.boolean().default(true).description('是否同时发本机系统通知（macOS osascript）'),
-    timeoutMs: Schema.number().default(5000).description('单次 webhook 请求超时（毫秒）'),
+        .description('Events that trigger notifications: task_done / error / approval_requested'),
+    local: Schema.boolean().default(true).description('Also emit a local system notification (macOS osascript)'),
+    timeoutMs: Schema.number().default(5000).description('Per-webhook request timeout (ms)'),
     dnd: Schema.object({
-        start: Schema.string().default('').description('免打扰开始（HH:MM，留空关闭）'),
-        end: Schema.string().default('').description('免打扰结束（HH:MM，跨天也支持，如 23:00-08:00）'),
-    }).description('免打扰时段：期间不弹本机通知也不发 webhook，事件照常记录'),
-    includeSession: Schema.boolean().default(true).description('通知内容是否带「会话」行'),
-    includeDuration: Schema.boolean().default(true).description('通知内容是否带「耗时」行'),
+        start: Schema.string().default('').description('Do-not-disturb start (HH:MM, empty disables)'),
+        end: Schema.string().default('').description('Do-not-disturb end (HH:MM, cross-midnight ok)'),
+    }).description('DND window: events are logged but no local/webhook emission'),
+    includeSession: Schema.boolean().default(true).description('Include the session line in notification text'),
+    includeDuration: Schema.boolean().default(true).description('Include the duration line in notification text'),
     excludeSessionPrefixes: Schema.array(Schema.string())
         .default([])
         .description('Skip notifications when session id starts with any prefix (e.g. msgw- for messenger-gateway)'),
@@ -36,28 +45,79 @@ function isExcludedSession(sessionId, prefixes) {
     }
     return false;
 }
+
 const DEFAULT_EVENTS = ['task_done', 'error', 'approval_requested'];
 /** Per-session last `turn/start` epoch ms, for turn-duration reporting. */
 const turnStarts = new Map();
+const warnedLegacyUrls = new Set();
+
+/** Resolve a config value to a webhook URL: credential ref (preferred), env fallback, or legacy raw URL. */
+export async function resolveWebhookValue(ctx, refOrUrl) {
+    if (!refOrUrl || typeof refOrUrl !== 'string') return '';
+    const v = refOrUrl.trim();
+    if (!v) return '';
+    if (/^https?:\/\//i.test(v)) {
+        if (!warnedLegacyUrls.has(v)) {
+            warnedLegacyUrls.add(v);
+            console.warn('[plugin-notify] raw webhook URL in Config is deprecated; store the URL in Credentials and put only the credential name in settings');
+        }
+        return v;
+    }
+    if (ctx?.credentials && typeof ctx.credentials.resolve === 'function') {
+        try {
+            const hit = await ctx.credentials.resolve(credentialRef(v));
+            if (hit?.value) return String(hit.value);
+        } catch {
+            /* fall through to env */
+        }
+    }
+    return process.env[v] || '';
+}
+
+export async function resolveWebhooks(ctx, webhooks = {}) {
+    const out = {};
+    for (const [channel, ref] of Object.entries(webhooks || {})) {
+        const url = await resolveWebhookValue(ctx, ref);
+        if (url) out[channel] = url;
+    }
+    return out;
+}
+
 export function apply(ctx, config = {}) {
-    const cfg = config ?? {};
-    const events = new Set(normalizeEvents(cfg.events));
-    const local = cfg.local ?? true;
-    const timeoutMs = cfg.timeoutMs ?? 5000;
-    const webhooks = cfg.webhooks ?? {};
-    const dnd = cfg.dnd;
-    const includeSession = cfg.includeSession ?? true;
-    const includeDuration = cfg.includeDuration ?? true;
-    const excludeSessionPrefixes = cfg.excludeSessionPrefixes ?? [];
-    /** DND gate: event is logged (recorded) but no notification is emitted. */
+    let getConfig = () => config ?? {};
+
+    if (typeof ctx.inject === 'function') {
+        ctx.inject(['settings'], (sctx) => {
+            const scope = sctx.settings.register(NS, Config, { base: config ?? {} });
+            getConfig = () => scope.get() ?? config ?? {};
+        });
+    }
+
     const dispatch = (n) => {
+        const cfg = getConfig();
+        const dnd = cfg.dnd;
         if (inDnd(dnd)) {
-            console.log(`[plugin-notify] ${n.kind} · ${n.title} · 会话 ${n.sessionId} · 免打扰时段（${dnd?.start}-${dnd?.end}），事件照记不通知`);
+            console.log(`[plugin-notify] ${n.kind} · ${n.title} · session ${n.sessionId} · DND (${dnd?.start}-${dnd?.end}), logged only`);
             return;
         }
-        send(n, webhooks, timeoutMs, local, includeSession, includeDuration);
+        const timeoutMs = cfg.timeoutMs ?? 5000;
+        const local = cfg.local ?? true;
+        const includeSession = cfg.includeSession ?? true;
+        const includeDuration = cfg.includeDuration ?? true;
+        // Resolve credential refs then fire-and-forget posts; never block the agent loop.
+        Promise.resolve()
+            .then(() => resolveWebhooks(ctx, cfg.webhooks ?? {}))
+            .then((urls) => send(n, urls, timeoutMs, local, includeSession, includeDuration))
+            .catch((error) => {
+                console.warn(`[plugin-notify] webhook resolve/send failed: ${String(error)}`);
+            });
     };
+
     ctx.on('session/event', (session, event) => {
+        const cfg = getConfig();
+        const events = new Set(normalizeEvents(cfg.events));
+        const excludeSessionPrefixes = cfg.excludeSessionPrefixes ?? [];
+
         if (event.type === 'turn/start') {
             turnStarts.set(String(session.id), Date.now());
             return;
@@ -91,34 +151,32 @@ export function apply(ctx, config = {}) {
                 kind: 'approval_requested',
                 title: sessionTitle(session),
                 sessionId: String(session.id),
-                summary: `等待审批：工具 ${data.toolName}${data.reason ? `（${data.reason}）` : ''}`,
+                summary: `Waiting for approval: tool ${data.toolName}${data.reason ? ` (${data.reason})` : ''}`,
             });
         }
     });
 }
+
 function normalizeEvents(configured) {
     if (!configured || configured.length === 0)
         return [...DEFAULT_EVENTS];
     const known = ['task_done', 'error', 'approval_requested'];
     return known.filter(kind => configured.includes(kind));
 }
+
 function send(n, webhooks, timeoutMs, local, includeSession, includeDuration) {
     const text = renderText(n, includeSession, includeDuration);
     const signal = AbortSignal.timeout(timeoutMs);
-    const channels = Object.entries(webhooks)
-        .filter(([, url]) => typeof url === 'string' && url.length > 0)
-        .map(([name]) => name);
-    console.log(`[plugin-notify] ${n.kind} · ${n.title} · 会话 ${n.sessionId} · 通道 ${channels.join(',') || '无'} · 本机 ${local}`);
+    const channels = Object.keys(webhooks);
+    console.log(`[plugin-notify] ${n.kind} · ${n.title} · session ${n.sessionId} · channels ${channels.join(',') || 'none'} · local ${local}`);
     const post = (url, body) => {
-        // Emission is an irreversible side effect: fire-and-forget, never retry,
-        // never block the agent loop (design principle 9 — compensate, don't block).
         fetch(url, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
             signal,
         }).catch(error => {
-            console.warn(`[plugin-notify] webhook POST failed (${url.slice(0, 64)}…): ${String(error)}`);
+            console.warn(`[plugin-notify] webhook POST failed (${String(url).slice(0, 64)}…): ${String(error)}`);
         });
     };
     if (webhooks.feishu)
@@ -142,22 +200,23 @@ function send(n, webhooks, timeoutMs, local, includeSession, includeDuration) {
         });
     }
     if (local)
-        notifyLocal(n.kind === 'task_done' ? '✅ 任务完成' : n.kind === 'error' ? '⚠️ 运行出错' : '⏸️ 等待审批', text);
+        notifyLocal(n.kind === 'task_done' ? '✅ Task done' : n.kind === 'error' ? '⚠️ Error' : '⏸️ Approval needed', text);
 }
+
 function renderText(n, includeSession, includeDuration) {
-    const kindLabel = n.kind === 'task_done' ? '任务完成' : n.kind === 'error' ? '运行出错' : '等待审批';
+    const kindLabel = n.kind === 'task_done' ? 'Task done' : n.kind === 'error' ? 'Error' : 'Approval needed';
     const lines = [`【${kindLabel}】${n.title}`];
     if (n.summary)
-        lines.push(`摘要：${n.summary}`);
+        lines.push(`Summary: ${n.summary}`);
     if (n.reason)
-        lines.push(`原因：${n.reason}`);
+        lines.push(`Reason: ${n.reason}`);
     if (includeDuration && n.durationMs !== undefined)
-        lines.push(`耗时：${formatDuration(n.durationMs)}`);
+        lines.push(`Duration: ${formatDuration(n.durationMs)}`);
     if (includeSession)
-        lines.push(`会话：${n.sessionId}`);
+        lines.push(`Session: ${n.sessionId}`);
     return lines.join('\n');
 }
-/** HH:MM -> minutes since midnight, or null when malformed. */
+
 function parseHM(v) {
     if (!v)
         return null;
@@ -170,8 +229,7 @@ function parseHM(v) {
         return null;
     return h * 60 + mi;
 }
-/** In the do-not-disturb window? Cross-midnight ranges (23:00-08:00) are
- *  supported; equal start/end or malformed values mean "never". */
+
 function inDnd(dnd, now = new Date()) {
     const s = parseHM(dnd?.start);
     const e = parseHM(dnd?.end);
@@ -180,26 +238,28 @@ function inDnd(dnd, now = new Date()) {
     const cur = now.getHours() * 60 + now.getMinutes();
     return s < e ? cur >= s && cur < e : cur >= s || cur < e;
 }
+
 function formatDuration(ms) {
     const seconds = Math.round(ms / 1000);
     if (seconds < 60)
-        return `${seconds} 秒`;
+        return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
     const rest = seconds % 60;
-    return rest === 0 ? `${minutes} 分钟` : `${minutes} 分 ${rest} 秒`;
+    return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
 }
+
 function reasonLabel(reason) {
     switch (reason.kind) {
-        case 'completed': return '完成';
-        case 'error': return '出错';
-        case 'aborted': return '已中止';
-        case 'blocked': return '被阻断';
-        case 'max-tokens': return '达到最大 token';
-        case 'interrupted': return '中断';
+        case 'completed': return 'completed';
+        case 'error': return 'error';
+        case 'aborted': return 'aborted';
+        case 'blocked': return 'blocked';
+        case 'max-tokens': return 'max-tokens';
+        case 'interrupted': return 'interrupted';
         default: return reason.kind;
     }
 }
-/** Concatenated visible text from a list of content blocks (structural, no type dep). */
+
 function textOf(content) {
     let out = '';
     for (const block of content) {
@@ -211,7 +271,7 @@ function textOf(content) {
     }
     return out;
 }
-/** A short human title for a session: the first user message, else the id. */
+
 function sessionTitle(session) {
     for (const event of session.events) {
         if (event.type === 'user/message') {
@@ -222,7 +282,7 @@ function sessionTitle(session) {
     }
     return String(session.id);
 }
-/** One-line summary of a finished turn: last assistant text + tool-call count. */
+
 function summarizeTurn(session, turn) {
     let toolCalls = 0;
     let lastText = '';
@@ -241,10 +301,10 @@ function summarizeTurn(session, turn) {
         parts.push(trimmed.length > 120 ? `${trimmed.slice(0, 120)}…` : trimmed);
     }
     if (toolCalls > 0)
-        parts.push(`调用了 ${toolCalls} 次工具`);
-    return parts.join('；') || '（无文本输出）';
+        parts.push(`called ${toolCalls} tools`);
+    return parts.join('; ') || '(no text output)';
 }
-/** Best-effort macOS notification; a no-op elsewhere. */
+
 function notifyLocal(title, text) {
     if (process.platform !== 'darwin')
         return;
