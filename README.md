@@ -47,32 +47,36 @@ For local development, build a package artifact and install it only in the isola
 
 ## 配置 / Configuration
 
-在 profile 的 `cordis.patch.yml` 里给插件行加 `config`（Schemastery schema，见 `export const Config`）：
+**Secrets:** put each webhook URL into DeepSeek Harness **Credentials**, then put only the credential **name** in plugin settings (`webhooks.*`). Do not store URLs in `cordis.patch.yml` or the settings card.
 
-Add a `config` block to this plugin's row in the profile's `cordis.patch.yml`:
+Web UI: **Settings → Plugins → Notify** (`settings.plugin.item`).
+
+Changed in recent private builds: `webhooks.*` are credential refs (role `credential-ref`). A legacy raw `http(s)://` URL still works with a deprecation warning.
+
+Example (credential names, not URLs):
 
 ```yaml
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
     webhooks:
-      feishu: 'https://open.feishu.cn/open-apis/bot/v2/hook/xxxx'   # 飞书
-      wecom: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx'  # 企业微信
-      dingtalk: 'https://oapi.dingtalk.com/robot/send?access_token=xxxx'  # 钉钉
-      slack: 'https://hooks.slack.com/services/T/B/xxxx'            # Slack
-      discord: 'https://discord.com/api/webhooks/xxxx/xxxx'         # Discord
-      custom: 'https://example.com/hook'                            # 自定义 JSON
-    events: ['task_done', 'error', 'approval_requested']            # 触发过滤，缺省三者全开
-    local: true                                                     # 本机系统通知（macOS）
-    timeoutMs: 5000                                                 # 单次 POST 超时
+      feishu: 'NOTIFY_FEISHU_WEBHOOK'
+      wecom: 'NOTIFY_WECOM_WEBHOOK'
+      dingtalk: 'NOTIFY_DINGTALK_WEBHOOK'
+      slack: 'NOTIFY_SLACK_WEBHOOK'
+      discord: 'NOTIFY_DISCORD_WEBHOOK'
+      custom: 'NOTIFY_CUSTOM_WEBHOOK'
+    events: ['task_done', 'error', 'approval_requested']
+    local: true
+    timeoutMs: 5000
 ```
 
-| 字段 / Field | 默认 / Default | 说明 / Meaning |
+| Field | Default | Meaning |
 |---|---|---|
-| `webhooks.*` | 空 / empty | 各通道 webhook 地址；留空该通道不发送 / empty = that channel disabled |
-| `events` | `['task_done','error','approval_requested']` | 触发通知的事件白名单 / notification event whitelist |
-| `local` | `true` | 是否发本机系统通知 / also send a local notification |
-| `timeoutMs` | `5000` | 单次 webhook 超时 / per-request timeout |
+| `webhooks.*` | empty | Credential name whose value is the webhook URL; empty disables the channel |
+| `events` | `task_done,error,approval_requested` | Event whitelist |
+| `local` | `true` | Local macOS notification |
+| `timeoutMs` | `5000` | Per-request timeout |
 
 ## 消息格式 / Message shape
 
