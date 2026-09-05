@@ -107,3 +107,7 @@ Blocked / not closed: 本环境无真实 webhook 地址，远程投递只验证�
 
 遵守 `dsh-plugin-design-principles.md`：`inject` 声明依赖（#3）、`ctx.on` 注册即 effect（#1）、
 发射副作用只补偿不阻塞（#9）、事件走类型化 `session/event`（#15）。
+
+## Changed in v0.2.3
+
+- Settings card / authoring fixes from audit batch (see Gitea issues).
