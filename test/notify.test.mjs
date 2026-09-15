@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
+import vm from 'node:vm'
 import { test } from 'node:test'
 import { apply, name, NS, resolveWebhookValue } from '../dist/index.js'
 
@@ -55,6 +56,56 @@ test('private package identity matches host, client and patch sites', () => {
   assert.match(client, /settings\.plugin\.item/)
   assert.equal(pkg.exports['./client'], './dist/client.js')
   assert.ok(pkg.dsh.client)
+})
+
+test('client locale registration coexists with Russian language pack', () => {
+  const source = fs.readFileSync(path.join(root, 'dist/client.js'), 'utf8')
+  let client
+  const sandbox = {
+    window: {
+      __ModuleLoader__: {
+        load(entry) {
+          client = entry.factory((id) => {
+            if (id === 'react') return {}
+            if (id === '@deepseek-ai/dsh-client-ui-primitives') return {}
+            throw new Error(`unexpected client dependency: ${id}`)
+          })
+        },
+      },
+    },
+    console,
+  }
+  vm.runInNewContext(source, sandbox)
+
+  const dictionaries = new Map([[`${NS}:ru`, { title: 'Уведомления' }]])
+  const ctx = {
+    locale: {
+      bind: () => (key) => key,
+      register(namespace, localeMap) {
+        for (const [locale, dictionary] of Object.entries(localeMap)) {
+          const key = `${namespace}:${locale}`
+          if (dictionaries.has(key)) throw new Error(`duplicate locale ${key}`)
+          dictionaries.set(key, dictionary)
+        }
+        return () => {}
+      },
+    },
+    effect(callback) {
+      return callback()
+    },
+    slots: {
+      inject(_name, callback) {
+        callback()
+        return true
+      },
+      register() {},
+    },
+  }
+
+  assert.doesNotThrow(() => client.apply(ctx))
+  assert.ok(dictionaries.has(`${NS}:ru`))
+  assert.ok(dictionaries.has(`${NS}:en`))
+  assert.ok(dictionaries.has(`${NS}:zh`))
 })
 
 test('legacy raw webhook URL still posts (compat)', async () => {

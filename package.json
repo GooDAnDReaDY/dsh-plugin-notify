@@ -1,6 +1,6 @@
 {
   "name": "@goodandready-private/dsh-plugin-notify",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Fork of @dsh-suite/plugin-notify with excludeSessionPrefixes for messenger-gateway sessions.",
   "license": "MIT",
   "type": "module",

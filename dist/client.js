@@ -33,32 +33,32 @@ window.__ModuleLoader__.load({
       'settings.saved': 'Saved',
       'settings.saveFailed': 'Save failed: ',
     }
-    const ru = {
-      title: 'Notify',
-      subtitle: 'Уведомления в IM webhook при завершении / ошибке / approval',
-      intro: 'Сохраните URL webhook в «Учётные данные», а сюда впишите только имя credential. Не вставляйте URL в эту форму.',
-      'field.feishu': 'Credential Feishu',
-      'field.wecom': 'Credential WeCom',
-      'field.dingtalk': 'Credential DingTalk',
-      'field.slack': 'Credential Slack',
-      'field.discord': 'Credential Discord',
-      'field.custom': 'Credential custom webhook',
-      'field.events': 'События (через запятую)',
-      'field.local': 'Локальное уведомление macOS',
-      'field.timeoutMs': 'Таймаут webhook (мс)',
-      'field.dndStart': 'DND начало (HH:MM)',
-      'field.dndEnd': 'DND конец (HH:MM)',
-      'field.includeSession': 'Включать id сессии',
-      'field.includeDuration': 'Включать длительность',
-      'field.excludePrefixes': 'Исключить префиксы сессий (через запятую)',
-      'hint.cred': 'Только имя credential — значением должен быть полный URL webhook.',
+    const zh = {
+      title: '通知',
+      subtitle: '在任务完成、出错或需要审批时发送 IM Webhook 通知',
+      intro: '请先在设置 → 凭据中保存 Webhook URL，然后只在下方填写凭据名称。不要直接粘贴 URL。',
+      'field.feishu': '飞书凭据',
+      'field.wecom': '企业微信凭据',
+      'field.dingtalk': '钉钉凭据',
+      'field.slack': 'Slack 凭据',
+      'field.discord': 'Discord 凭据',
+      'field.custom': '自定义 Webhook 凭据',
+      'field.events': '事件（逗号分隔）',
+      'field.local': '本地 macOS 通知',
+      'field.timeoutMs': 'Webhook 超时（毫秒）',
+      'field.dndStart': '免打扰开始时间（HH:MM）',
+      'field.dndEnd': '免打扰结束时间（HH:MM）',
+      'field.includeSession': '包含会话 ID',
+      'field.includeDuration': '包含持续时间',
+      'field.excludePrefixes': '排除会话前缀（逗号分隔）',
+      'hint.cred': '仅填写凭据名称；其值必须是完整的 Webhook URL。',
       'hint.events': 'task_done, error, approval_requested',
-      'settings.loading': 'Загрузка настроек…',
-      'settings.unavailable': 'Пространство настроек плагина недоступно.',
-      'settings.save': 'Сохранить',
-      'settings.saving': 'Сохранение…',
-      'settings.saved': 'Сохранено',
-      'settings.saveFailed': 'Ошибка сохранения: ',
+      'settings.loading': '正在加载设置…',
+      'settings.unavailable': '此插件的设置范围不可用。',
+      'settings.save': '保存',
+      'settings.saving': '正在保存…',
+      'settings.saved': '已保存',
+      'settings.saveFailed': '保存失败：',
     }
 
     let ChevronIcon = null
@@ -129,7 +129,7 @@ window.__ModuleLoader__.load({
     function NotifyCard(props) {
       const ctx = props.ctx
       const locale = useActiveLocale(ctx)
-      const t = props.t || makeT(locale === 'ru' ? ru : en, en)
+      const t = props.t || makeT(locale === 'zh' ? zh : en, en)
       const [open, setOpen] = React.useState(false)
       const [draft, setDraft] = React.useState(null)
       const [saving, setSaving] = React.useState(false)
@@ -272,7 +272,7 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       const t = ctx.locale ? ctx.locale.bind(NS) : ((k) => k)
-      ctx.effect(() => ctx.locale.register(NS, { en, ru }), 'dsh-plugin-notify: dictionaries')
+      ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'dsh-plugin-notify: dictionaries')
       let placed = false
       try {
         placed = !!ctx.slots.inject('settings.plugin.item', () => {
