@@ -6,6 +6,11 @@ delivery, and `excludeSessionPrefixes` suppression. The isolated DSH test
 profile additionally verifies package installation, service health, bundle
 loading, and cleanup while preserving its permanent lanmode plugin.
 
+The client owns the English and Chinese dictionaries. Russian strings are
+provided by `dsh-russian-lang`; the plugin must not register the `ru` locale
+itself. Loading both packages must complete without a duplicate-locale error
+and without a failed web-boot entry.
+
 Run:
 
 ```sh
