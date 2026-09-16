@@ -1,113 +1,169 @@
-# @goodandready-private/dsh-plugin-notify
+# 📦 @goodandready-private/dsh-plugin-notify
 
-[![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
-[💬 问题反馈](https://github.com/whyihaveyou/dsh-suite/issues/new?template=plugin-feedback.yml&labels=feedback&plugin=plugin-notify)
+<div align="center">
 
+<h3>Remote IM webhooks for turn done, errors, and approval waits</h3>
 
-> DSH 插件：回合完成 / 出错 / 待审批时，把通知推到 IM webhook + 本机系统通知。
-> 社区现有 `dsh-notification` 只弹本机窗口；本插件做**远程 IM webhook**（飞书 / 企业微信 / 钉钉 / Slack / Discord / 自定义），是差异化能力。
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10b981.svg?style=for-the-badge&labelColor=064e3b" alt="license"></a>
+  <a href="https://github.com/topics/dsh-plugin"><img src="https://img.shields.io/badge/DSH-Plugin-8b5cf6.svg?style=for-the-badge&labelColor=2e1065" alt="DSH Plugin"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-20%2B-f59e0b.svg?style=for-the-badge&labelColor=451a03" alt="Node version"></a>
+</p>
 
-> DSH plugin: push turn-completion / error / approval notifications to IM webhooks
-> plus a local system notification. Unlike `dsh-notification` (local-only popup),
-> this sends **remote IM webhooks** (Feishu / WeCom / DingTalk / Slack / Discord / custom).
+<p align="center">
+  <a href="https://goodandready.app/"><img src="https://img.shields.io/badge/🌐_DSH_Hub-goodandready.app-ff4500.svg?style=for-the-badge&labelColor=1a1a2e" alt="GoodAndReady Showcase"></a>
+</p>
 
----
+<p align="center">
+  <a href="README.md"><b>🇬🇧 English</b></a> •
+  <a href="README.zh.md"><b>🇨🇳 中文说明</b></a> •
+  <a href="README.ru.md"><b>🇷🇺 Русский</b></a>
+</p>
 
-## 特性 / Features
+<table align="center">
+  <tr>
+    <td align="center">
+      ⭐ <strong>If you like this plugin, please star it on GitHub</strong> — it shows me that the plugin is useful to you and motivates me to keep developing it.
+      <br><br>
+      🐛 <strong>If you find a bug or would like to request a feature</strong>, open a GitHub issue in any language — I will review your proposal and implement useful suggestions in a future plugin version.
+    </td>
+  </tr>
+</table>
 
-- 监听 DSH 持久的 `session/event` 流，命中三类事件即发通知：
-  - `turn/end`（reason=`completed`）→ **task_done**（回合完成，含标题 + 结果摘要 + 耗时）
-  - `turn/end`（reason=`error`/`aborted`/`blocked`/`max-tokens`/`interrupted`）→ **error**
-  - `approval/asked`（来自 `@deepseek-ai/dsh-user-approval`）→ **approval_requested**（待审批）
-- 配置驱动，6 种通道：飞书、企业微信、钉钉、Slack、Discord、自定义（POST JSON）。
-- 本机通知：macOS 走 `osascript display notification`，非 macOS 自动跳过。
-- **免打扰时段 (v0.2)**：配置 `dnd.start`/`dnd.end`（HH:MM，支持跨天如 `23:00-08:00`）。时段内事件照常监听记录（console 标注「免打扰…事件照记不通知」），但不弹本机通知、不发任何 webhook。
-- **内容可配置 (v0.2)**：`includeSession` / `includeDuration` 开关通知文本里的「会话」「耗时」行，默认均开启。
-- 发射是**不可逆副作用**：POST 失败只 `console.warn`，绝不重试、绝不阻塞 agent 循环。
-
-- Listens on DSH's durable `session/event` firehose and notifies on three event kinds:
-  - `turn/end` (`reason=completed`) → **task_done** (title + result summary + duration)
-  - `turn/end` (`reason=error/aborted/blocked/max-tokens/interrupted`) → **error**
-  - `approval/asked` (from `@deepseek-ai/dsh-user-approval`) → **approval_requested**
-- Config-driven, 6 channels: Feishu, WeCom, DingTalk, Slack, Discord, custom JSON.
-- Local notification via `osascript` on macOS; skipped elsewhere.
-- Do-not-disturb window (v0.2): `dnd.start`/`dnd.end` (HH:MM, cross-midnight like `23:00-08:00` works). Inside the window events are still observed/logged ("免打扰…事件照记不通知") but no local popup and no webhook is sent.
-- Configurable content (v0.2): `includeSession` / `includeDuration` toggle the 会话/耗时 lines (both default on).
-- Emission is irreversible: failed POSTs only `console.warn`, never retried, never block the loop.
+</div>
 
 ---
 
-## 安装 / Install
+## Overview / The Problem
 
-```sh
-dsh plugin --profile <name> add @goodandready-private/dsh-plugin-notify
+DeepSeek Harness already knows when a turn finished, failed, or is waiting for approval. Without this plugin those events stay inside the session. Local-only notifiers cannot reach a phone or a team chat.
+
+This plugin listens to the durable `session/event` firehose on the host half and POSTs a short text payload to the IM channels you enable. Webhook URLs are secrets: they live in DSH Credentials. The settings card stores only credential **names**.
+
+## Architecture
+
+```mermaid
+graph LR
+  A[DSH session/event] --> B[plugin-notify host]
+  B -->|credential name| C[Credentials service]
+  C -->|webhook URL| B
+  B -->|POST JSON| D[Feishu / WeCom / DingTalk / Slack / Discord / custom]
+  B -.->|macOS only| E[osascript notification]
+  F[Settings card] -->|credential names| B
 ```
 
-For local development, build a package artifact and install it only in the isolated test profile; production uses the published private package.
+## Feature breakdown
 
-## 配置 / Configuration
+### Host (`lib/index.js`)
 
-**Secrets:** put each webhook URL into DeepSeek Harness **Credentials**, then put only the credential **name** in plugin settings (`webhooks.*`). Do not store URLs in `cordis.patch.yml` or the settings card.
+- Subscribes to `session/event`.
+- `turn/end` with `reason.kind === 'completed'` → `task_done`.
+- `turn/end` with any other reason → `error`.
+- `approval/asked` → `approval_requested`.
+- Resolves each `webhooks.*` value as: legacy `http(s)://` URL (deprecated warning) → Credentials `resolve(credentialRef(name))` → `process.env[name]`.
+- Posts with `AbortSignal.timeout(timeoutMs)` (default 5000 ms). Failed POSTs are logged and never retried, and they never block the agent loop.
+- Optional DND window (`HH:MM`, including overnight ranges). Events are still observed; webhooks and local popups are skipped.
+- `excludeSessionPrefixes` skips sessions whose id starts with a configured prefix.
 
-Web UI: **Settings → Plugins → Notify** (`settings.plugin.item`).
+### Client (`lib/client.js`)
 
-Changed in recent private builds: `webhooks.*` are credential refs (role `credential-ref`). A legacy raw `http(s)://` URL still works with a deprecation warning.
+- Native settings card on `settings.plugin.item` (fallback `settings.section`).
+- Snapshot status `loading` / `unavailable` / `ready` before the form is writable.
+- Save writes every field and lists named failures.
+- Locale dictionaries: `en` and `zh` only. Russian UI is supplied at runtime by `dsh-russian-lang`.
+- Injected stylesheet is tagged `data-dsh-plugin="dsh-plugin-notify"`.
 
-Example (credential names, not URLs):
+## Install
+
+This package is private (GitHub Packages). After you have registry access:
+
+```sh
+dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
+```
+
+Restart the web profile so the client half loads. Then open **Settings → Plugins → Notify**.
+
+## Configuration
+
+Put each webhook URL into **Settings → Credentials**. In the plugin card, type only the credential name.
 
 ```yaml
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
     webhooks:
-      feishu: 'NOTIFY_FEISHU_WEBHOOK'
-      wecom: 'NOTIFY_WECOM_WEBHOOK'
-      dingtalk: 'NOTIFY_DINGTALK_WEBHOOK'
-      slack: 'NOTIFY_SLACK_WEBHOOK'
-      discord: 'NOTIFY_DISCORD_WEBHOOK'
-      custom: 'NOTIFY_CUSTOM_WEBHOOK'
-    events: ['task_done', 'error', 'approval_requested']
+      feishu: NOTIFY_FEISHU_WEBHOOK
+      wecom: NOTIFY_WECOM_WEBHOOK
+      dingtalk: NOTIFY_DINGTALK_WEBHOOK
+      slack: NOTIFY_SLACK_WEBHOOK
+      discord: NOTIFY_DISCORD_WEBHOOK
+      custom: NOTIFY_CUSTOM_WEBHOOK
+    events: [task_done, error, approval_requested]
     local: true
     timeoutMs: 5000
+    dnd:
+      start: ''
+      end: ''
+    includeSession: true
+    includeDuration: true
+    excludeSessionPrefixes: []
 ```
 
-| Field | Default | Meaning |
-|---|---|---|
-| `webhooks.*` | empty | Credential name whose value is the webhook URL; empty disables the channel |
-| `events` | `task_done,error,approval_requested` | Event whitelist |
-| `local` | `true` | Local macOS notification |
-| `timeoutMs` | `5000` | Per-request timeout |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `webhooks.*` | string | empty | Credential **name** whose value is the webhook URL. Empty disables the channel. |
+| `events` | string[] | `task_done`, `error`, `approval_requested` | Event whitelist. Empty restores the default three. |
+| `local` | boolean | `true` | macOS `osascript` popup; ignored on other platforms. |
+| `timeoutMs` | number | `5000` | Per-request abort timeout. |
+| `dnd.start` / `dnd.end` | string | empty | `HH:MM` window. Equal or invalid values disable DND. |
+| `includeSession` | boolean | `true` | Append `Session: …` to the text body. |
+| `includeDuration` | boolean | `true` | Append `Duration: …` when a turn start timestamp is known. |
+| `excludeSessionPrefixes` | string[] | `[]` | Skip notifications when `session.id` starts with any prefix. |
 
-## 消息格式 / Message shape
+A leftover raw `http(s)://` value in `webhooks.*` still posts, with a deprecation warning. Migrate it to Credentials.
 
-飞书/企业微信/钉钉发送 `text` 卡片，Slack 发 `{ text }`，Discord 发 `{ content }`，
-`custom` 发 `{ text, kind, title, sessionId, durationMs, time }`。文本内容统一为：
+## Message shape
 
-Feishu/WeCom/DingTalk send a text card; Slack `{ text }`; Discord `{ content }`;
-`custom` posts `{ text, kind, title, sessionId, durationMs, time }`. The text body:
+| Channel | JSON body |
+|---|---|
+| Feishu | `{ msg_type: 'text', content: { text } }` |
+| WeCom | `{ msgtype: 'text', text: { content: text } }` |
+| DingTalk | `{ msgtype: 'text', text: { content: text } }` |
+| Slack | `{ text }` |
+| Discord | `{ content: text }` |
+| custom | `{ text, kind, title, sessionId, durationMs, time }` |
+
+Text body:
 
 ```
-【任务完成】帮我查一下 Kuramoto 临界指数
-摘要：临界指数为 γ⁻ = γ⁺ = 1…
-耗时：3 分 42 秒
-会话：session-1
+【Task done】short session title
+Summary: …
+Reason: completed
+Duration: 3m 42s
+Session: session-1
 ```
 
-## 验证 / Verification
+## Tests
 
-- ✅ Published ESM bundle is checked by the package smoke tests
-- ✅ `dsh.bundle` + `cordis.patch.yml` 装载进真实 DSH profile（`--dump-config` 含本行）
-- ✅ `turn/end` → 通知派发路径（`task_done` и `error` scenarios are covered）
-- ⚠️ 真实 IM 投递（需真实 webhook URL 与外部网络）——未闭环，见下
+From a clone:
 
-Blocked / not closed: 本环境无真实 webhook 地址，远程投递只验证到「POST 已发起、失败仅
-`console.warn`」，未验证到对方 IM 收到消息。
+```sh
+npm install --no-audit --no-fund --no-package-lock
+npm test
+```
 
-## 设计准则 / Design principles
+`pretest` runs `node --check` on `lib/index.js` and `lib/client.js`. `npm test` then runs `node --test test/*.test.mjs`.
 
-遵守 `dsh-plugin-design-principles.md`：`inject` 声明依赖（#3）、`ctx.on` 注册即 effect（#1）、
-发射副作用只补偿不阻塞（#9）、事件走类型化 `session/event`（#15）。
+The suite stubs `fetch` / a local HTTP listener. It does not call a real IM provider. Live delivery needs a webhook you own.
 
-## Changed in v0.2.3
+## License
 
-- Settings card / authoring fixes from audit batch (see Gitea issues).
+MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
+
+## Changed in v0.2.5
+
+- Runtime sources live in `lib/` instead of a misleading `dist/` tree; there is no TypeScript build.
+- The settings card stylesheet is tagged `data-dsh-plugin="dsh-plugin-notify"` so HMR and neighbour-plugin cleanup keep the card styles.
+- Automated tests cover IM channel bodies, missing credentials, recipient failure, AbortSignal, and locale reload without a `ru` dictionary.
+- Product README exists in English, Chinese, and Russian. `AGENTS.md` / `index.md` stay in Gitea and are not packed into the npm tarball.
+

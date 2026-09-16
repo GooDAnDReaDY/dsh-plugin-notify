@@ -3,10 +3,12 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import vm from 'node:vm'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, name, NS, resolveWebhookValue } from '../dist/index.js'
+import { apply, name, NS, resolveWebhookValue } from '../lib/index.js'
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+const root = fileURLToPath(new URL('..', import.meta.url))
+const clientPath = path.join(root, 'lib/client.js')
 
 function context(extra = {}) {
   let listener
@@ -44,22 +46,23 @@ function session(id) {
   }
 }
 
-test('private package identity matches host, client and patch sites', () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-  assert.equal(pkg.name, '@goodandready-private/dsh-plugin-notify')
-  assert.equal(pkg.publishConfig.registry, 'https://npm.pkg.github.com')
-  assert.equal(name, '@goodandready-private/dsh-plugin-notify')
-  assert.equal(NS, '@goodandready-private/dsh-plugin-notify')
-  assert.match(fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8'), /@goodandready-private\/dsh-plugin-notify/)
-  const client = fs.readFileSync(path.join(root, 'dist/client.js'), 'utf8')
-  assert.match(client, /id: '@goodandready-private\/dsh-plugin-notify'/)
-  assert.match(client, /settings\.plugin\.item/)
-  assert.equal(pkg.exports['./client'], './dist/client.js')
-  assert.ok(pkg.dsh.client)
-})
+function waitFor(predicate, ms = 2000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout waiting for condition')), ms)
+    const poll = () => {
+      if (predicate()) {
+        clearTimeout(timer)
+        resolve()
+        return
+      }
+      setTimeout(poll, 10)
+    }
+    poll()
+  })
+}
 
-test('client locale registration coexists with Russian language pack', () => {
-  const source = fs.readFileSync(path.join(root, 'dist/client.js'), 'utf8')
+function loadClient() {
+  const source = fs.readFileSync(clientPath, 'utf8')
   let client
   const sandbox = {
     window: {
@@ -76,22 +79,32 @@ test('client locale registration coexists with Russian language pack', () => {
     console,
   }
   vm.runInNewContext(source, sandbox)
+  return client
+}
 
-  const dictionaries = new Map([[`${NS}:ru`, { title: 'Уведомления' }]])
+function localeCtx() {
+  const dictionaries = new Map([[`${NS}:ru`, { title: 'from-language-pack' }]])
+  const disposers = []
   const ctx = {
     locale: {
       bind: () => (key) => key,
       register(namespace, localeMap) {
+        const added = []
         for (const [locale, dictionary] of Object.entries(localeMap)) {
           const key = `${namespace}:${locale}`
           if (dictionaries.has(key)) throw new Error(`duplicate locale ${key}`)
           dictionaries.set(key, dictionary)
+          added.push(key)
         }
-        return () => {}
+        return () => {
+          for (const key of added) dictionaries.delete(key)
+        }
       },
     },
     effect(callback) {
-      return callback()
+      const dispose = callback()
+      if (typeof dispose === 'function') disposers.push(dispose)
+      return dispose
     },
     slots: {
       inject(_name, callback) {
@@ -101,11 +114,52 @@ test('client locale registration coexists with Russian language pack', () => {
       register() {},
     },
   }
+  return { ctx, dictionaries, disposers }
+}
 
+test('private package identity matches host, client and patch sites', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  assert.equal(pkg.name, '@goodandready-private/dsh-plugin-notify')
+  assert.equal(pkg.publishConfig.registry, 'https://npm.pkg.github.com')
+  assert.equal(name, '@goodandready-private/dsh-plugin-notify')
+  assert.equal(NS, '@goodandready-private/dsh-plugin-notify')
+  assert.match(fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8'), /@goodandready-private\/dsh-plugin-notify/)
+  const client = fs.readFileSync(clientPath, 'utf8')
+  assert.match(client, /id: '@goodandready-private\/dsh-plugin-notify'/)
+  assert.match(client, /settings\.plugin\.item/)
+  assert.match(client, /dataset\.dshPlugin = 'dsh-plugin-notify'/)
+  assert.equal(pkg.exports['.'], './lib/index.js')
+  assert.equal(pkg.exports['./client'], './lib/client.js')
+  assert.equal(pkg.main, './lib/index.js')
+  assert.ok(pkg.dsh.client)
+  assert.equal(pkg.devDependencies.typescript, undefined)
+  assert.ok(pkg.files.includes('README.zh.md'))
+  assert.ok(pkg.files.includes('README.ru.md'))
+  assert.ok(!pkg.files.includes('AGENTS.md'))
+  assert.ok(!pkg.files.includes('index.md'))
+})
+
+test('client locale registration coexists with Russian language pack', () => {
+  const client = loadClient()
+  const { ctx, dictionaries } = localeCtx()
   assert.doesNotThrow(() => client.apply(ctx))
   assert.ok(dictionaries.has(`${NS}:ru`))
   assert.ok(dictionaries.has(`${NS}:en`))
   assert.ok(dictionaries.has(`${NS}:zh`))
+  assert.equal(dictionaries.has(`${NS}:ru`) && dictionaries.get(`${NS}:ru`).title, 'from-language-pack')
+})
+
+test('client apply does not register ru and can reload after effect dispose', () => {
+  const client = loadClient()
+  const { ctx, dictionaries, disposers } = localeCtx()
+  assert.doesNotThrow(() => client.apply(ctx))
+  assert.equal(dictionaries.get(`${NS}:ru`).title, 'from-language-pack')
+  assert.ok(!Object.prototype.hasOwnProperty.call(dictionaries.get(`${NS}:en`) || {}, 'ru'))
+  for (const dispose of disposers.splice(0)) dispose()
+  assert.doesNotThrow(() => client.apply(ctx))
+  assert.ok(dictionaries.has(`${NS}:en`))
+  assert.ok(dictionaries.has(`${NS}:zh`))
+  assert.equal(dictionaries.get(`${NS}:ru`).title, 'from-language-pack')
 })
 
 test('legacy raw webhook URL still posts (compat)', async () => {
@@ -125,11 +179,7 @@ test('legacy raw webhook URL still posts (compat)', async () => {
   const s = session('smoke-session')
   ctx.emit(s, { type: 'turn/start' })
   ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('webhook timeout')), 2000)
-    const poll = () => requests.length ? (clearTimeout(timer), resolve()) : setTimeout(poll, 10)
-    poll()
-  })
+  await waitFor(() => requests.length > 0)
   server.close()
   assert.equal(requests[0].method, 'POST')
   assert.equal(requests[0].body.kind, 'task_done')
@@ -160,11 +210,7 @@ test('credential ref resolves webhook URL via credentials service', async () => 
   const s = session('cred-session')
   ctx.emit(s, { type: 'turn/start' })
   ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('webhook timeout')), 2000)
-    const poll = () => requests.length ? (clearTimeout(timer), resolve()) : setTimeout(poll, 10)
-    poll()
-  })
+  await waitFor(() => requests.length > 0)
   server.close()
   assert.equal(requests[0].sessionId, 'cred-session')
 })
@@ -180,11 +226,123 @@ test('resolveWebhookValue prefers credentials then env', async () => {
   delete process.env.NOTIFY_ENV_HOOK
 })
 
-test('excluded session prefixes suppress notifications', () => {
-  const ctx = context()
-  apply(ctx, { webhooks: {}, local: false, excludeSessionPrefixes: ['msgw-'] })
-  const s = session('msgw-suppressed')
-  ctx.emit(s, { type: 'turn/start' })
-  ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
-  assert.ok(true)
+test('missing credential name does not post', async () => {
+  const posts = []
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, opts) => {
+    posts.push({ url, body: JSON.parse(opts.body) })
+    return new Response('ok', { status: 200 })
+  }
+  try {
+    const ctx = context({
+      credentials: { resolve: async () => ({ value: '' }) },
+    })
+    apply(ctx, { webhooks: { custom: 'MISSING_HOOK' }, local: false, events: ['task_done'] })
+    const s = session('missing-cred')
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    assert.equal(posts.length, 0)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('each IM channel posts the expected body shape', async () => {
+  const posts = []
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, opts) => {
+    posts.push({ url: String(url), body: JSON.parse(opts.body) })
+    return new Response('ok', { status: 200 })
+  }
+  try {
+    const ctx = context()
+    apply(ctx, {
+      local: false,
+      events: ['task_done'],
+      webhooks: {
+        feishu: 'https://example.test/feishu',
+        wecom: 'https://example.test/wecom',
+        dingtalk: 'https://example.test/dingtalk',
+        slack: 'https://example.test/slack',
+        discord: 'https://example.test/discord',
+        custom: 'https://example.test/custom',
+      },
+    })
+    const s = session('shape-session')
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    await waitFor(() => posts.length >= 6)
+    const byUrl = Object.fromEntries(posts.map((p) => [p.url, p.body]))
+    assert.equal(byUrl['https://example.test/feishu'].msg_type, 'text')
+    assert.equal(typeof byUrl['https://example.test/feishu'].content.text, 'string')
+    assert.equal(byUrl['https://example.test/wecom'].msgtype, 'text')
+    assert.equal(byUrl['https://example.test/dingtalk'].msgtype, 'text')
+    assert.equal(typeof byUrl['https://example.test/slack'].text, 'string')
+    assert.equal(typeof byUrl['https://example.test/discord'].content, 'string')
+    assert.equal(byUrl['https://example.test/custom'].kind, 'task_done')
+    assert.equal(byUrl['https://example.test/custom'].sessionId, 'shape-session')
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('recipient HTTP failure does not throw out of the session loop', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () => {
+    throw new Error('connect reset')
+  }
+  try {
+    const ctx = context()
+    apply(ctx, { webhooks: { custom: 'https://example.test/down' }, local: false, events: ['task_done'] })
+    const s = session('down-session')
+    ctx.emit(s, { type: 'turn/start' })
+    assert.doesNotThrow(() => {
+      ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('AbortSignal.timeout is attached to webhook POST', async () => {
+  const original = globalThis.fetch
+  let seen
+  globalThis.fetch = async (_url, opts) => {
+    seen = opts.signal
+    return new Response('ok', { status: 200 })
+  }
+  try {
+    const ctx = context()
+    apply(ctx, { webhooks: { custom: 'https://example.test/timeout' }, local: false, events: ['task_done'], timeoutMs: 1234 })
+    const s = session('timeout-session')
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    await waitFor(() => Boolean(seen))
+    assert.equal(typeof seen.aborted, 'boolean')
+    assert.equal(seen.aborted, false)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('excluded session prefixes suppress notifications', async () => {
+  const posts = []
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, opts) => {
+    posts.push(opts)
+    return new Response('ok', { status: 200 })
+  }
+  try {
+    const ctx = context()
+    apply(ctx, { webhooks: { custom: 'https://example.test/x' }, local: false, excludeSessionPrefixes: ['msgw-'] })
+    const s = session('msgw-suppressed')
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    assert.equal(posts.length, 0)
+  } finally {
+    globalThis.fetch = original
+  }
 })
