@@ -148,3 +148,11 @@ npm test
 ## Лицензия
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
+
+## Changed in v0.2.5
+
+- Исходники runtime лежат в `lib/`, а не в вводящем в заблуждение `dist/`; TypeScript-сборки нет.
+- Стили карточки помечены `data-dsh-plugin="dsh-plugin-notify"`, чтобы HMR и очистка соседнего плагина не снимали оформление.
+- Тесты покрывают тела IM-каналов, отсутствие credential, отказ получателя, AbortSignal и перезагрузку locale без словаря `ru`.
+- README есть на английском, китайском и русском. `AGENTS.md` / `index.md` остаются в Gitea и не входят в npm-пакет.
+

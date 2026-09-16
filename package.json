@@ -1,6 +1,6 @@
 {
   "name": "@goodandready-private/dsh-plugin-notify",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "DSH plugin: push turn-completion, error, and approval notifications to IM webhooks.",
   "license": "MIT",
   "type": "module",

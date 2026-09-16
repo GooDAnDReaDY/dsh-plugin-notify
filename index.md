@@ -11,4 +11,4 @@ package is private and published as `@goodandready-private/dsh-plugin-notify`.
 - Deployment: publish the tagged package to GitHub Packages and install the exact version in the profile; see `docs/deployment/private-release.md` and `deploy.sh`.
 - Testing details: `docs/testing/notification.md`.
 
-Last verified: 16.09.2026 on MiniAI worktree `chore/dsh-plugin-notify-audit-hygiene` by `npm test`.
+Version: 0.2.5. Last verified: 16.09.2026 on MiniAI worktree `chore/dsh-plugin-notify-audit-hygiene` by `npm test`.

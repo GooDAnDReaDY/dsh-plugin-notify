@@ -159,3 +159,11 @@ The suite stubs `fetch` / a local HTTP listener. It does not call a real IM prov
 ## License
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
+
+## Changed in v0.2.5
+
+- Runtime sources live in `lib/` instead of a misleading `dist/` tree; there is no TypeScript build.
+- The settings card stylesheet is tagged `data-dsh-plugin="dsh-plugin-notify"` so HMR and neighbour-plugin cleanup keep the card styles.
+- Automated tests cover IM channel bodies, missing credentials, recipient failure, AbortSignal, and locale reload without a `ru` dictionary.
+- Product README exists in English, Chinese, and Russian. `AGENTS.md` / `index.md` stay in Gitea and are not packed into the npm tarball.
+

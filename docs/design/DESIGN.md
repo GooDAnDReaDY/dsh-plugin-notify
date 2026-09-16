@@ -3,7 +3,7 @@
 ## Product / Purpose
 - Purpose: push turn-completion, error, and approval-waiting notifications to IM webhooks, with an optional local macOS notification.
 - Audience: DeepSeek Harness operators who want remote IM alerts without storing webhook URLs in plugin settings.
-- Status: private package `@goodandready-private/dsh-plugin-notify` 0.2.4, GitHub Packages.
+- Status: private package `@goodandready-private/dsh-plugin-notify` 0.2.5, GitHub Packages.
 
 ## User Surfaces
 - Web/UI: none beyond DSH settings.
@@ -47,3 +47,4 @@
 - 2026-09-16 — Runtime sources live in `lib/`, not `dist/`; there is no TypeScript build. Revisit only if a real compile step is introduced.
 - 2026-09-16 — `AGENTS.md` and `index.md` stay tracked in Gitea and are excluded from npm / GitHub publication artifacts. Revisit if a sanitized GitHub source tree is introduced.
 - 2026-09-16 — Product README exists in English, Chinese, and Russian; Russian is documentation only, not plugin UI.
+- 2026-09-16 — Release 0.2.5 is the private GitHub Packages successor to already-published 0.2.4; reason: hygiene block cannot reuse an immutable published version.

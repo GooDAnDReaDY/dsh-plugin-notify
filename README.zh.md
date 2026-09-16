@@ -147,3 +147,11 @@ npm test
 ## 许可证
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
+
+## Changed in v0.2.5
+
+- 运行时代码位于 `lib/`，不再使用易误解的 `dist/`；没有 TypeScript 构建。
+- 设置卡片样式带有 `data-dsh-plugin="dsh-plugin-notify"`，避免 HMR 或相邻插件清理时丢掉样式。
+- 自动化测试覆盖各 IM 通道正文、缺失凭据、接收方失败、AbortSignal，以及不注册 `ru` 的 locale 重载。
+- README 提供英文、中文、俄文。`AGENTS.md` / `index.md` 留在 Gitea，不进入 npm 包。
+
