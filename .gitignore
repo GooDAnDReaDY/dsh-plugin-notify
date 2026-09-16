@@ -1,2 +1,15 @@
-
 node_modules/
+.env
+.env.*
+*.pem
+*.key
+*.crt
+credentials.yaml
+.planning/
+*.log
+.worktrees/
+*.tgz
+coverage/
+dist/
+.DS_Store
+Thumbs.db
