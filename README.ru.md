@@ -36,22 +36,30 @@
 
 ## Обзор / Проблема
 
-DeepSeek Harness уже знает, когда ход завершился, упал или ждёт approval. Без этого плагина события остаются внутри сессии. Только локальное всплывающее окно не дойдёт до телефона или командного чата.
+DeepSeek Harness уже знает, когда ход завершился, упал или ждёт approval. Без этого плагина события остаются внутри сессии. Если вы ведёте несколько параллельных сессий или переключились в другое приложение, приходится постоянно заглядывать и проверять статус вручную.
 
-Плагин слушает устойчивый поток `session/event` на стороне хоста и делает POST короткого текста в включённые IM-каналы. URL вебхуков — секреты: они хранятся в DSH Credentials. Карточка настроек хранит только **имена** учётных данных.
+Плагин закрывает этот разрыв четырьмя уровнями уведомлений:
+1. **Звуковые сигналы (Web Audio)**: Приятные пентатонические переливы колокольчиков прямо в браузере или приложении DSH без внешних аудиофайлов.
+2. **Экранные тосты (In-App Toasts)**: Всплывающие карточки поверх сессий с интерактивной кнопкой **«Перейти в сессию»** для мгновенного перехода к нужной задаче.
+3. **Системные уведомления (OS / Desktop Push)**: Нативные уведомления Windows, macOS, Linux и DSH Desktop через HTML5 `Notification API` с фокусировкой окна и переходом в сессию.
+4. **Удалённые вебхуки (Remote IM)**: Отправка JSON-событий в Feishu, WeCom, DingTalk, Slack, Discord или custom HTTP-эндпоинт. Секретные URL вебхуков надёжно хранятся в DSH Credentials.
 
-Русский интерфейс карточки даёт отдельный `dsh-russian-lang`. Этот плагин регистрирует только словари `en` и `zh`.
+Русский интерфейс карточки настроек даёт отдельный языковой пакет `dsh-russian-lang`. Этот плагин регистрирует словари `en` и `zh`.
 
 ## Архитектура
 
 ```mermaid
-graph LR
+graph TD
   A[DSH session/event] --> B[plugin-notify host]
   B -->|credential name| C[Credentials service]
   C -->|webhook URL| B
   B -->|POST JSON| D[Feishu / WeCom / DingTalk / Slack / Discord / custom]
   B -.->|macOS only| E[osascript notification]
-  F[Settings card] -->|credential names| B
+  B -->|SSE stream: /dsh-plugin-notify/events| F[Client Listener lib/client.js]
+  F -->|Web Audio API| G[Звуковые сигналы]
+  F -->|DOM overlay| H[Экранные тосты]
+  F -->|Notification API| I[Десктопные уведомления OS]
+  J[Карточка настроек] -->|параметры| B
 ```
 
 ## Возможности
@@ -62,14 +70,19 @@ graph LR
 - `turn/end` с `reason.kind === 'completed'` → `task_done`.
 - любой другой `turn/end` → `error`.
 - `approval/asked` → `approval_requested`.
+- Трансляция событий в реальном времени через SSE (`GET /dsh-plugin-notify/events`) через сервис Cordis `webServer`.
 - Разрешение `webhooks.*`: устаревший сырой `http(s)://` (предупреждение) → Credentials `resolve` → `process.env[name]`.
 - POST с `AbortSignal.timeout(timeoutMs)` (по умолчанию 5000 мс). Ошибка POST только логируется, без ретрая и без блокировки цикла агента.
-- Опциональное окно DND (`HH:MM`, в том числе через полночь). События наблюдаются; вебхуки и локальные попапы пропускаются.
+- Опциональное окно DND (`HH:MM`, в том числе через полночь). События наблюдаются; вебхуки, звуки и локальные попапы пропускаются.
 - `excludeSessionPrefixes` пропускает сессии, чей id начинается с заданного префикса.
 
 ### Клиент (`lib/client.js`)
 
-- Нативная карточка `settings.plugin.item` (запасной путь `settings.section`).
+- Нативная карточка настроек на `settings.plugin.item`.
+- Синтезатор звуковых сигналов Web Audio API для `task_done`, `error` и `approval_requested` с кнопкой «Проверить звук».
+- Ненавязчивый менеджер тостов с кнопкой перехода в сессию и кнопкой «Проверить тост».
+- Поддержка нативных десктопных пушей HTML5 с запросом разрешений.
+- Подписчик SSE с авто-реконнектом и опциональным фильтром `notifyBackgroundOnly`.
 - Статусы снимка `loading` / `unavailable` / `ready`.
 - Save записывает все поля и перечисляет ошибки по имени.
 - Стили помечаются `data-dsh-plugin="dsh-plugin-notify"`.
@@ -92,6 +105,10 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
+    enableSound: true
+    enableToasts: true
+    enableDesktopNotifications: true
+    notifyBackgroundOnly: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
       wecom: NOTIFY_WECOM_WEBHOOK
@@ -112,6 +129,10 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 
 | Параметр | Тип | По умолчанию | Описание |
 |---|---|---|---|
+| `enableSound` | boolean | `true` | Звуковые сигналы Web Audio при завершении задачи, ошибке или запросе approval. |
+| `enableToasts` | boolean | `true` | Экранные всплывающие тосты поверх всех сессий с кнопкой перехода. |
+| `enableDesktopNotifications` | boolean | `true` | Системные десктопные уведомления ОС (Windows, macOS, Linux, DSH Desktop). |
+| `notifyBackgroundOnly` | boolean | `false` | Уведомлять только если событие произошло в неактивной фоновой сессии. |
 | `webhooks.*` | string | пусто | **Имя** credential, значение которого — URL вебхука. Пусто отключает канал. |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | Белый список событий. Пусто возвращает три значения по умолчанию. |
 | `local` | boolean | `true` | macOS `osascript`; на других ОС игнорируется. |
@@ -149,10 +170,7 @@ npm test
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
 
-## Changed in v0.2.5
+## История изменений
 
-- Исходники runtime лежат в `lib/`, а не в вводящем в заблуждение `dist/`; TypeScript-сборки нет.
-- Стили карточки помечены `data-dsh-plugin="dsh-plugin-notify"`, чтобы HMR и очистка соседнего плагина не снимали оформление.
-- Тесты покрывают тела IM-каналов, отсутствие credential, отказ получателя, AbortSignal и перезагрузку locale без словаря `ru`.
-- README есть на английском, китайском и русском. `AGENTS.md` / `index.md` остаются в Gitea и не входят в npm-пакет.
+Подробный список изменений доступен в [CHANGELOG.md](CHANGELOG.md).
 

@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, name, NS, resolveWebhookValue } from '../lib/index.js'
+import { apply, Config, name, NS, resolveWebhookValue, broadcastSse } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -28,6 +28,11 @@ function context(extra = {}) {
               return { get: () => null }
             },
           },
+        })
+      }
+      if (Array.isArray(deps) && deps.includes('webServer') && extra.webServer) {
+        cb({
+          webServer: extra.webServer,
         })
       }
     },
@@ -345,4 +350,93 @@ test('excluded session prefixes suppress notifications', async () => {
   } finally {
     globalThis.fetch = original
   }
+})
+
+test('Config schema validates sound, toast, and desktop notification fields', () => {
+  const cfg = Config({
+    enableSound: true,
+    enableToasts: false,
+    enableDesktopNotifications: true,
+    notifyBackgroundOnly: true,
+  })
+  assert.equal(cfg.enableSound, true)
+  assert.equal(cfg.enableToasts, false)
+  assert.equal(cfg.enableDesktopNotifications, true)
+  assert.equal(cfg.notifyBackgroundOnly, true)
+})
+
+test('SSE route registers on webServer and handles stream connection and broadcast', async () => {
+  let routeDef = null
+  const ctx = context({
+    webServer: {
+      register(def) {
+        routeDef = def
+        return () => {}
+      },
+    },
+  })
+  apply(ctx, { local: false })
+  assert.ok(routeDef, 'route should be registered')
+  assert.equal(routeDef.kind, 'exact')
+  assert.equal(routeDef.path, '/dsh-plugin-notify/events')
+
+  const headers = {}
+  const chunks = []
+  const listeners = {}
+
+  const req = {
+    method: 'GET',
+    on(evt, cb) { listeners[evt] = cb },
+  }
+  const res = {
+    writeHead(status, hdrs) {
+      res.statusCode = status
+      Object.assign(headers, hdrs)
+    },
+    write(chunk) { chunks.push(chunk) },
+    end() {},
+    on(evt, cb) { listeners[evt] = cb },
+  }
+
+  routeDef.handler(req, res)
+  assert.equal(res.statusCode, 200)
+  assert.equal(headers['Content-Type'], 'text/event-stream')
+  assert.equal(headers['Cache-Control'], 'no-cache, no-transform')
+  assert.ok(chunks.some((c) => c.includes(': connected')))
+
+  // Trigger turn/end event and verify broadcast
+  const s = session('sse-test-session')
+  ctx.emit(s, { type: 'turn/start' })
+  ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+
+  assert.ok(chunks.some((c) => c.includes('"sessionId":"sse-test-session"') && c.includes('"kind":"task_done"')))
+
+  // Clean close
+  if (listeners.close) listeners.close()
+})
+
+test('client does not register settings.section slot (issue #16 fix)', () => {
+  const registeredSlots = []
+  const client = loadClient()
+  const ctx = {
+    locale: {
+      bind: () => (k) => k,
+      register: () => () => {},
+    },
+    effect: (cb) => cb(),
+    slots: {
+      inject(name, cb) {
+        cb()
+        return true
+      },
+      register(entry) {
+        registeredSlots.push(entry)
+      },
+    },
+  }
+  client.apply(ctx)
+  const hasSection = registeredSlots.some((s) => s.name === 'settings.section')
+  const hasItem = registeredSlots.some((s) => s.name === 'settings.plugin.item')
+  assert.equal(hasSection, false, 'settings.section must not be registered')
+  assert.equal(hasItem, true, 'settings.plugin.item must be registered')
 })

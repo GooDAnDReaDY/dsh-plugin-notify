@@ -34,22 +34,30 @@
 
 ---
 
-## 概述 / 问题
+### 概述 / 问题
 
-DeepSeek Harness 已经知道回合何时完成、失败或等待审批。没有本插件时，这些事件只留在会话里。仅本机弹窗无法到达手机或团队聊天。
+DeepSeek Harness 已经知道回合何时完成、失败或等待审批。没有本插件时，这些事件只留在会话里。如果你同时打开多个并行会话或切换到了其他应用，不得不频繁切回窗口手动查看状态。
 
-本插件在宿主侧监听持久的 `session/event` 流，并向你启用的 IM 通道 POST 一段短文本。Webhook URL 是密钥：它们存放在 DSH 凭据中。设置卡片只保存凭据**名称**。
+本插件通过四个层级全面覆盖通知场景：
+1. **音频提示音 (Web Audio)**：使用浏览器内置 Web Audio API 合成双音五声音阶提示音，在任务完成、出错或等待审批时轻柔提示，无需外部音频文件。
+2. **跨会话屏幕横幅 (In-App Toasts)**：在界面上方显示浮动通知卡片，带有交互式**“跳转至会话”**按钮，可一键切换到触发事件的目标会话。
+3. **桌面 / 系统级通知 (OS Push)**：通过 HTML5 `Notification API` 触发 Windows、macOS、Linux 及 DSH 桌面端系统原生通知，点击自动聚焦窗口并跳转会话。
+4. **远程 IM Webhook**：向飞书、企业微信、钉钉、Slack、Discord 或自定义 HTTP 接口投递 JSON 负载。Webhook URL 作为机密安全保存在 DSH 凭据中。
 
 ## 架构
 
 ```mermaid
-graph LR
+graph TD
   A[DSH session/event] --> B[plugin-notify host]
   B -->|credential name| C[Credentials service]
   C -->|webhook URL| B
   B -->|POST JSON| D[Feishu / WeCom / DingTalk / Slack / Discord / custom]
   B -.->|macOS only| E[osascript notification]
-  F[Settings card] -->|credential names| B
+  B -->|SSE stream: /dsh-plugin-notify/events| F[Client Listener lib/client.js]
+  F -->|Web Audio API| G[音频提示音]
+  F -->|DOM overlay| H[跨会话屏幕横幅]
+  F -->|Notification API| I[系统桌面通知]
+  J[设置卡片] -->|参数配置| B
 ```
 
 ## 功能说明
@@ -60,14 +68,19 @@ graph LR
 - `turn/end` 且 `reason.kind === 'completed'` → `task_done`。
 - 其他 `turn/end` 原因 → `error`。
 - `approval/asked` → `approval_requested`。
+- 通过 Cordis `webServer` 服务向已连接的前端客户端提供实时 SSE 事件流（`GET /dsh-plugin-notify/events`）。
 - 解析 `webhooks.*`：遗留 `http(s)://` URL（弃用警告）→ Credentials `resolve` → `process.env[name]`。
 - 使用 `AbortSignal.timeout(timeoutMs)`（默认 5000 ms）。POST 失败只记录，不重试，不阻塞 agent 循环。
-- 可选免打扰窗口（`HH:MM`，支持跨夜）。事件仍会观察；Webhook 和本机弹窗会跳过。
+- 可选免打扰窗口（`HH:MM`，支持跨夜）。事件仍会观察；Webhook、提示音和本机弹窗会跳过。
 - `excludeSessionPrefixes` 会跳过 id 匹配前缀的会话。
 
 ### 客户端（`lib/client.js`）
 
-- 原生设置卡片：`settings.plugin.item`（回退 `settings.section`）。
+- 原生设置卡片：`settings.plugin.item`。
+- Web Audio API 双音提示音合成器，支持 `task_done`、`error` 与 `approval_requested`，附带“测试声音”按钮。
+- 跨会话浮动 Toast 管理器，支持跳转会话及“测试通知”按钮。
+- HTML5 原生桌面通知集成与权限申请。
+- 实时 SSE 订阅器，支持指数退避自动重连及可选的 `notifyBackgroundOnly` 过滤。
 - 快照状态 `loading` / `unavailable` / `ready`。
 - 保存会写入全部字段并列出失败项。
 - 语言包只有 `en` 和 `zh`。俄语界面由 `dsh-russian-lang` 在运行时提供。
@@ -91,6 +104,10 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
+    enableSound: true
+    enableToasts: true
+    enableDesktopNotifications: true
+    notifyBackgroundOnly: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
       wecom: NOTIFY_WECOM_WEBHOOK
@@ -111,6 +128,10 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 
 | 参数 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
+| `enableSound` | boolean | `true` | 回合完成、出错或等待审批时播放 Web Audio 合成提示音。 |
+| `enableToasts` | boolean | `true` | 跨会话弹出屏幕横幅通知，附带一键跳转按钮。 |
+| `enableDesktopNotifications` | boolean | `true` | 系统原生桌面推送（Windows、macOS、Linux、DSH 桌面版）。 |
+| `notifyBackgroundOnly` | boolean | `false` | 仅当事件发生在非活跃/后台会话时才触发通知。 |
 | `webhooks.*` | string | 空 | 值为 Webhook URL 的凭据**名称**。空则关闭该通道。 |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | 事件白名单。空则恢复默认三项。 |
 | `local` | boolean | `true` | macOS `osascript` 弹窗；其他平台忽略。 |
@@ -148,10 +169,7 @@ npm test
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
 
-## Changed in v0.2.5
+## 变更历史
 
-- 运行时代码位于 `lib/`，不再使用易误解的 `dist/`；没有 TypeScript 构建。
-- 设置卡片样式带有 `data-dsh-plugin="dsh-plugin-notify"`，避免 HMR 或相邻插件清理时丢掉样式。
-- 自动化测试覆盖各 IM 通道正文、缺失凭据、接收方失败、AbortSignal，以及不注册 `ru` 的 locale 重载。
-- README 提供英文、中文、俄文。`AGENTS.md` / `index.md` 留在 Gitea，不进入 npm 包。
+完整更新日志详见 [CHANGELOG.md](CHANGELOG.md)。
 

@@ -1,7 +1,7 @@
 {
   "name": "@goodandready-private/dsh-plugin-notify",
-  "version": "0.2.5",
-  "description": "DSH plugin: push turn-completion, error, and approval notifications to IM webhooks.",
+  "version": "0.3.0",
+  "description": "DSH plugin: audio chimes, cross-session toasts, desktop push, and IM webhooks for turn completion, errors, and approvals.",
   "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",
@@ -13,6 +13,7 @@
     "lib",
     "cordis.patch.yml",
     "LICENSE",
+    "CHANGELOG.md",
     "README.md",
     "README.zh.md",
     "README.ru.md"
