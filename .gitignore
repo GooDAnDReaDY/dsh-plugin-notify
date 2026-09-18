@@ -13,3 +13,12 @@ coverage/
 dist/
 .DS_Store
 Thumbs.db
+
+# Internal agent and working files (not tracked in public repository)
+AGENTS.md
+index.md
+docs/testing/
+docs/deployment/
+deploy.sh
+
+
