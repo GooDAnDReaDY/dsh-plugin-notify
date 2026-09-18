@@ -165,6 +165,29 @@ npm test
 
 套件使用 stub `fetch` 或本地 HTTP 监听器，不会调用真实 IM 服务。真实投递需要你自己的 Webhook。
 
+预期输出：
+
+```text
+✔ private package identity matches host, client and patch sites
+✔ client locale registration coexists with Russian language pack
+✔ client apply does not register ru and can reload after effect dispose
+✔ legacy raw webhook URL still posts (compat)
+✔ credential ref resolves webhook URL via credentials service
+✔ resolveWebhookValue prefers credentials then env
+✔ missing credential name does not post
+✔ each IM channel posts the expected body shape
+✔ recipient HTTP failure does not throw out of the session loop
+✔ AbortSignal.timeout is attached to webhook POST
+✔ excluded session prefixes suppress notifications
+✔ Config schema validates sound, toast, and desktop notification fields with opt-in defaults
+✔ SSE route registers on webServer, rejects untrusted requests, and handles trusted stream
+✔ client does not register settings.section slot (issue #16 fix)
+✔ deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)
+ℹ tests 15
+ℹ pass 15
+ℹ fail 0
+```
+
 ## 许可证
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)

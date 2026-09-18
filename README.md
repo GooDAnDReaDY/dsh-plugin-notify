@@ -177,6 +177,29 @@ npm test
 
 The suite stubs `fetch` / a local HTTP listener. It does not call a real IM provider. Live delivery needs a webhook you own.
 
+Expected output:
+
+```text
+✔ private package identity matches host, client and patch sites
+✔ client locale registration coexists with Russian language pack
+✔ client apply does not register ru and can reload after effect dispose
+✔ legacy raw webhook URL still posts (compat)
+✔ credential ref resolves webhook URL via credentials service
+✔ resolveWebhookValue prefers credentials then env
+✔ missing credential name does not post
+✔ each IM channel posts the expected body shape
+✔ recipient HTTP failure does not throw out of the session loop
+✔ AbortSignal.timeout is attached to webhook POST
+✔ excluded session prefixes suppress notifications
+✔ Config schema validates sound, toast, and desktop notification fields with opt-in defaults
+✔ SSE route registers on webServer, rejects untrusted requests, and handles trusted stream
+✔ client does not register settings.section slot (issue #16 fix)
+✔ deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)
+ℹ tests 15
+ℹ pass 15
+ℹ fail 0
+```
+
 ## License
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
