@@ -1,4 +1,4 @@
-# 📦 @goodandready-private/dsh-plugin-notify
+# 📦 @goodandready/dsh-plugin-notify
 
 <div align="center">
 
@@ -91,7 +91,7 @@ graph TD
 本包为私有包（GitHub Packages）。在具备仓库访问权限后：
 
 ```sh
-dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
+dsh plugin --profile web add @goodandready/dsh-plugin-notify
 ```
 
 重启 web 配置以便加载客户端。然后打开 **设置 → 插件 → Notify**。
@@ -102,7 +102,7 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 
 ```yaml
 - id: plugin-notify
-  name: '@goodandready-private/dsh-plugin-notify'
+  name: '@goodandready/dsh-plugin-notify'
   config:
     enableSound: false
     enableToasts: false
@@ -168,7 +168,7 @@ npm test
 预期输出：
 
 ```text
-✔ private package identity matches host, client and patch sites
+✔ public package identity matches host, client and patch sites
 ✔ client locale registration coexists with Russian language pack
 ✔ client apply does not register ru and can reload after effect dispose
 ✔ legacy raw webhook URL still posts (compat)

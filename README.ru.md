@@ -1,4 +1,4 @@
-# 📦 @goodandready-private/dsh-plugin-notify
+# 📦 @goodandready/dsh-plugin-notify
 
 <div align="center">
 
@@ -92,7 +92,7 @@ graph TD
 Пакет приватный (GitHub Packages). После доступа к registry:
 
 ```sh
-dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
+dsh plugin --profile web add @goodandready/dsh-plugin-notify
 ```
 
 Перезапустите web-профиль, чтобы загрузилась клиентская половина. Затем **Настройки → Плагины → Notify**.
@@ -103,7 +103,7 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 
 ```yaml
 - id: plugin-notify
-  name: '@goodandready-private/dsh-plugin-notify'
+  name: '@goodandready/dsh-plugin-notify'
   config:
     enableSound: false
     enableToasts: false
@@ -169,7 +169,7 @@ npm test
 Ожидаемый вывод:
 
 ```text
-✔ private package identity matches host, client and patch sites
+✔ public package identity matches host, client and patch sites
 ✔ client locale registration coexists with Russian language pack
 ✔ client apply does not register ru and can reload after effect dispose
 ✔ legacy raw webhook URL still posts (compat)

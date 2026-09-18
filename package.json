@@ -1,5 +1,5 @@
 {
-  "name": "@goodandready-private/dsh-plugin-notify",
+  "name": "@goodandready/dsh-plugin-notify",
   "version": "0.3.0",
   "description": "DSH plugin: audio chimes, cross-session toasts, desktop push, and IM webhooks for turn completion, errors, and approvals.",
   "license": "MIT",
@@ -48,13 +48,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/goodandready-private/dsh-plugin-notify.git"
+    "url": "git+https://github.com/GooDAnDReaDY/dsh-plugin-notify.git"
   },
-  "homepage": "https://github.com/goodandready-private/dsh-plugin-notify#readme",
+  "homepage": "https://github.com/GooDAnDReaDY/dsh-plugin-notify#readme",
   "bugs": {
-    "url": "https://github.com/goodandready-private/dsh-plugin-notify/issues"
+    "url": "https://github.com/GooDAnDReaDY/dsh-plugin-notify/issues"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   }
 }

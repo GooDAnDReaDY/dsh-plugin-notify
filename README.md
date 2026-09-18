@@ -1,4 +1,4 @@
-# 📦 @goodandready-private/dsh-plugin-notify
+# 📦 @goodandready/dsh-plugin-notify
 
 <div align="center">
 
@@ -91,7 +91,7 @@ graph TD
 This package is private (GitHub Packages). After you have registry access:
 
 ```sh
-dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
+dsh plugin --profile web add @goodandready/dsh-plugin-notify
 ```
 
 Restart the web profile so the client half loads. Then open **Settings → Plugins → Notify**.
@@ -102,7 +102,7 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 
 ```yaml
 - id: plugin-notify
-  name: '@goodandready-private/dsh-plugin-notify'
+  name: '@goodandready/dsh-plugin-notify'
   config:
     enableSound: false
     enableToasts: false
@@ -180,7 +180,7 @@ The suite stubs `fetch` / a local HTTP listener. It does not call a real IM prov
 Expected output:
 
 ```text
-✔ private package identity matches host, client and patch sites
+✔ public package identity matches host, client and patch sites
 ✔ client locale registration coexists with Russian language pack
 ✔ client apply does not register ru and can reload after effect dispose
 ✔ legacy raw webhook URL still posts (compat)
