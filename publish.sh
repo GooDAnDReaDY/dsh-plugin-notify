@@ -40,20 +40,29 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 
 build_public_tree() {
   local ref="$1"
-  local index_file
+  local temp_dir index_file tree git_dir
+  git_dir="$(git rev-parse --git-dir)"
+  temp_dir="$(mktemp -d)"
   index_file="$(mktemp)"
   rm -f "$index_file"
-  export GIT_INDEX_FILE="$index_file"
 
-  git read-tree "$ref" || fail "cannot read the tree of $ref"
-  local path
+  # Export strictly via git archive honoring .gitattributes export-ignore
+  git archive "$ref" | tar -x -C "$temp_dir" || fail "git archive failed for $ref"
+
+  # Double guard: explicitly ensure excluded paths are purged if any slipped through
   for path in "${EXCLUDED_PATHS[@]}"; do
-    git rm --cached -r -q --ignore-unmatch "$path" >/dev/null 2>&1 || true
+    rm -rf "$temp_dir/$path"
   done
-  local tree
-  tree="$(git write-tree)" || fail "cannot write the public tree"
+
+  # Build temporary index and write tree
+  export GIT_INDEX_FILE="$index_file"
+  export GIT_WORK_TREE="$temp_dir"
+  git --work-tree="$temp_dir" --git-dir="$git_dir" add -A || fail "cannot index exported tree"
+  tree="$(git --work-tree="$temp_dir" --git-dir="$git_dir" write-tree)" || fail "cannot write the public tree"
+
   unset GIT_INDEX_FILE
-  rm -f "$index_file"
+  unset GIT_WORK_TREE
+  rm -rf "$temp_dir" "$index_file"
   printf "%s" "$tree"
 }
 

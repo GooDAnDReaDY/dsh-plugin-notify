@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents the notify settings card from rendering twice (in root Settings and inside Plugins).
 
 ### Changed
+- **Public Package Migration**:
+  - Migrated package scope from `@goodandready-private/dsh-plugin-notify` to public `@goodandready/dsh-plugin-notify` on npm and GitHub.
+- **Repository Hygiene and Clean Tree (#10)**:
+  - Untracked internal agent instructions (`AGENTS.md`, `index.md`, `deploy.sh`, `docs/testing/`, `docs/deployment/`) from public git tracking while preserving them on local disk.
+  - Added sanitized GitHub publishing layer (`publish.sh`) and `.gitattributes` export-ignores.
+- **CI Test Suite and Leak Verification (#13)**:
+  - Added comprehensive GitHub Actions workflow (`.github/workflows/ci.yml`) and updated Gitea CI (`.gitea/workflows/ci.yml`).
+  - Added unit test suite for delivery channels, error resilience, timeouts, sound/toast options, and locale deduplication (15/15 pass).
 - **Opt-in Notification Channels (#20)**:
   - `enableSound`, `enableToasts`, and `enableDesktopNotifications` now default to `false` (opt-in) to prevent unexpected noise or unprompted browser permission popups.
   - Browser notification permission is requested exclusively via explicit user interaction ("Allow desktop notifications" button in the settings card).

@@ -130,15 +130,15 @@ function localeCtx() {
   return { ctx, dictionaries, disposers }
 }
 
-test('private package identity matches host, client and patch sites', () => {
+test('public package identity matches host, client and patch sites', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-  assert.equal(pkg.name, '@goodandready-private/dsh-plugin-notify')
-  assert.equal(pkg.publishConfig.registry, 'https://npm.pkg.github.com')
-  assert.equal(name, '@goodandready-private/dsh-plugin-notify')
-  assert.equal(NS, '@goodandready-private/dsh-plugin-notify')
-  assert.match(fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8'), /@goodandready-private\/dsh-plugin-notify/)
+  assert.equal(pkg.name, '@goodandready/dsh-plugin-notify')
+  assert.equal(pkg.publishConfig?.access, 'public')
+  assert.equal(name, '@goodandready/dsh-plugin-notify')
+  assert.equal(NS, '@goodandready/dsh-plugin-notify')
+  assert.match(fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8'), /@goodandready\/dsh-plugin-notify/)
   const client = fs.readFileSync(clientPath, 'utf8')
-  assert.match(client, /id: '@goodandready-private\/dsh-plugin-notify'/)
+  assert.match(client, /id: '@goodandready\/dsh-plugin-notify'/)
   assert.match(client, /settings\.plugin\.item/)
   assert.match(client, /dataset\.dshPlugin = 'dsh-plugin-notify'/)
   assert.equal(pkg.exports['.'], './lib/index.js')
