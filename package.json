@@ -56,5 +56,16 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "author": "GooDAnDReaDY <support@goodandready.app>",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "notifications",
+    "webhooks",
+    "desktop-push",
+    "audio-chimes",
+    "toasts"
+  ]
 }
