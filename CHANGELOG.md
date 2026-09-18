@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents the notify settings card from rendering twice (in root Settings and inside Plugins).
 
 ### Changed
+- **Opt-in Notification Channels (#20)**:
+  - `enableSound`, `enableToasts`, and `enableDesktopNotifications` now default to `false` (opt-in) to prevent unexpected noise or unprompted browser permission popups.
+  - Browser notification permission is requested exclusively via explicit user interaction ("Allow desktop notifications" button in the settings card).
+  - Web Audio `AudioContext` is managed lazily with graceful failure handling if blocked by browser autoplay policies.
+- **Fail-Closed SSE Origin Guard (#21)**:
+  - Added strict request validation (`isTrustedRequest`) on `GET /dsh-plugin-notify/events` checking `sec-fetch-site` (`same-origin`/`same-site`), origin/host match, loopback remote address, or DSH authorization headers.
+  - Returns `403 Forbidden` for untrusted cross-origin requests.
+  - Removed wildcard `Access-Control-Allow-Origin: *` header.
+- **Diagnostics via ctx.logger (#22)**:
+  - Replaced all server-side `console.*` calls with `ctx.logger` (`debug` for delivery events, `warn` for resolve/post failures).
+  - Diagnostic logs are now properly captured by DSH logging infrastructure instead of leaking to raw process stdout.
+- **Schemastery Dependency Architecture (#23)**:
+  - Moved `@deepseek-ai/schemastery` from `dependencies` to `peerDependencies` (with `devDependencies` for test runner), ensuring consistency with DSH ecosystem peer dependency contracts.
 - **Documentation Hygiene (#17)**:
   - Removed `Changed in vX.Y.Z` sections from `README.md`, `README.ru.md`, and `README.zh.md`, centralizing all version release history into `CHANGELOG.md`.
   - Registered `CHANGELOG.md` in `package.json` distribution files list.

@@ -104,9 +104,9 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
-    enableSound: true
-    enableToasts: true
-    enableDesktopNotifications: true
+    enableSound: false
+    enableToasts: false
+    enableDesktopNotifications: false
     notifyBackgroundOnly: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
@@ -128,9 +128,9 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `enableSound` | boolean | `true` | Synthesize gentle Web Audio chimes on turn finish, error, or approval wait. |
-| `enableToasts` | boolean | `true` | Show cross-session on-screen banner toasts with interactive session switching. |
-| `enableDesktopNotifications` | boolean | `true` | Show native OS push notifications (Windows, macOS, Linux, DSH Desktop). |
+| `enableSound` | boolean | `false` | Synthesize gentle Web Audio chimes on turn finish, error, or approval wait (opt-in). |
+| `enableToasts` | boolean | `false` | Show cross-session on-screen banner toasts with interactive session switching (opt-in). |
+| `enableDesktopNotifications` | boolean | `false` | Show native OS push notifications via HTML5 Notification API (opt-in). |
 | `notifyBackgroundOnly` | boolean | `false` | Only trigger audio, toasts, and push when event is from an inactive/background session. |
 | `webhooks.*` | string | empty | Credential **name** whose value is the webhook URL. Empty disables the channel. |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | Event whitelist. Empty restores the default three. |

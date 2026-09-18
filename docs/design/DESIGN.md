@@ -64,3 +64,7 @@
 - 2026-09-18 — Cross-session toasts styled with DSH CSS variables (`--dsw-alias-*`) and interactive session switcher button (`navigateToSession`); reason: enables fast workflow resumption when working across multiple sessions without leaving the browser tab.
 - 2026-09-18 — Native OS push notifications via HTML5 `Notification API`; reason: reaches operator when DSH is minimized or in background, with window focus on click.
 - 2026-09-18 — Version history centralized into `CHANGELOG.md`; reason: keep READMEs concise and maintain a single standard source of truth for release notes (Issue #17).
+- 2026-09-18 — Audio, toasts, and desktop push channels are opt-in (`default(false)`); reason: prevent unsolicited chimes or unexpected browser permission dialogs (Issue #20).
+- 2026-09-18 — Fail-closed origin check on `GET /dsh-plugin-notify/events`; reason: adhere to family standard verifying `sec-fetch-site`, origin/host match, or loopback (Issue #21).
+- 2026-09-18 — Server-side logging strictly through `ctx.logger`; reason: prevent stdout pollution and integrate with DSH diagnostic log collectors (Issue #22).
+- 2026-09-18 — `@deepseek-ai/schemastery` declared in `peerDependencies`; reason: core DSH runtime provides schemastery and prevents version drift across plugins (Issue #23).

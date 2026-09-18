@@ -12,7 +12,15 @@ const clientPath = path.join(root, 'lib/client.js')
 
 function context(extra = {}) {
   let listener
+  const logs = { warn: [], debug: [], info: [], error: [] }
   const ctx = {
+    logger: {
+      warn(msg) { logs.warn.push(msg) },
+      debug(msg) { logs.debug.push(msg) },
+      info(msg) { logs.info.push(msg) },
+      error(msg) { logs.error.push(msg) },
+    },
+    logs,
     on(topic, callback) {
       assert.equal(topic, 'session/event')
       listener = callback
@@ -352,20 +360,26 @@ test('excluded session prefixes suppress notifications', async () => {
   }
 })
 
-test('Config schema validates sound, toast, and desktop notification fields', () => {
+test('Config schema validates sound, toast, and desktop notification fields with opt-in defaults', () => {
+  const empty = Config({})
+  assert.equal(empty.enableSound, false)
+  assert.equal(empty.enableToasts, false)
+  assert.equal(empty.enableDesktopNotifications, false)
+  assert.equal(empty.notifyBackgroundOnly, false)
+
   const cfg = Config({
     enableSound: true,
-    enableToasts: false,
+    enableToasts: true,
     enableDesktopNotifications: true,
     notifyBackgroundOnly: true,
   })
   assert.equal(cfg.enableSound, true)
-  assert.equal(cfg.enableToasts, false)
+  assert.equal(cfg.enableToasts, true)
   assert.equal(cfg.enableDesktopNotifications, true)
   assert.equal(cfg.notifyBackgroundOnly, true)
 })
 
-test('SSE route registers on webServer and handles stream connection and broadcast', async () => {
+test('SSE route registers on webServer, rejects untrusted requests, and handles trusted stream', async () => {
   let routeDef = null
   const ctx = context({
     webServer: {
@@ -380,12 +394,23 @@ test('SSE route registers on webServer and handles stream connection and broadca
   assert.equal(routeDef.kind, 'exact')
   assert.equal(routeDef.path, '/dsh-plugin-notify/events')
 
+  // 1. Untrusted request (missing origin/sec-fetch-site/loopback) -> 403 Forbidden
+  const untrustedRes = {
+    statusCode: 0,
+    writeHead(status) { untrustedRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({ method: 'GET', headers: {} }, untrustedRes)
+  assert.equal(untrustedRes.statusCode, 403)
+
+  // 2. Trusted request (same-origin sec-fetch-site) -> 200 Stream
   const headers = {}
   const chunks = []
   const listeners = {}
 
   const req = {
     method: 'GET',
+    headers: { 'sec-fetch-site': 'same-origin' },
     on(evt, cb) { listeners[evt] = cb },
   }
   const res = {
@@ -440,3 +465,22 @@ test('client does not register settings.section slot (issue #16 fix)', () => {
   assert.equal(hasSection, false, 'settings.section must not be registered')
   assert.equal(hasItem, true, 'settings.plugin.item must be registered')
 })
+
+test('deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)', async () => {
+  const ctx = context()
+  const original = globalThis.fetch
+  globalThis.fetch = async () => new Response('ok', { status: 200 })
+  try {
+    apply(ctx, { webhooks: { custom: 'https://example.test/logger' }, local: false })
+    const s = session('logger-session')
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    const allLogs = [...ctx.logs.debug, ...ctx.logs.info]
+    assert.ok(allLogs.some((l) => l.includes('logger-session') && l.includes('task_done')), 'event delivery should be logged to ctx.logger')
+  } finally {
+    globalThis.fetch = original
+  }
+})
+

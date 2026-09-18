@@ -105,9 +105,9 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
-    enableSound: true
-    enableToasts: true
-    enableDesktopNotifications: true
+    enableSound: false
+    enableToasts: false
+    enableDesktopNotifications: false
     notifyBackgroundOnly: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
@@ -129,9 +129,9 @@ dsh plugin --profile web add @goodandready-private/dsh-plugin-notify
 
 | Параметр | Тип | По умолчанию | Описание |
 |---|---|---|---|
-| `enableSound` | boolean | `true` | Звуковые сигналы Web Audio при завершении задачи, ошибке или запросе approval. |
-| `enableToasts` | boolean | `true` | Экранные всплывающие тосты поверх всех сессий с кнопкой перехода. |
-| `enableDesktopNotifications` | boolean | `true` | Системные десктопные уведомления ОС (Windows, macOS, Linux, DSH Desktop). |
+| `enableSound` | boolean | `false` | Звуковые сигналы Web Audio при завершении задачи, ошибке или запросе approval (выключено по умолчанию, opt-in). |
+| `enableToasts` | boolean | `false` | Экранные всплывающие тосты поверх всех сессий с кнопкой перехода (opt-in). |
+| `enableDesktopNotifications` | boolean | `false` | Системные десктопные уведомления ОС через Notification API (opt-in). |
 | `notifyBackgroundOnly` | boolean | `false` | Уведомлять только если событие произошло в неактивной фоновой сессии. |
 | `webhooks.*` | string | пусто | **Имя** credential, значение которого — URL вебхука. Пусто отключает канал. |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | Белый список событий. Пусто возвращает три значения по умолчанию. |
