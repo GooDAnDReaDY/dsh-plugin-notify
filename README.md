@@ -36,20 +36,28 @@
 
 ## Overview / The Problem
 
-DeepSeek Harness already knows when a turn finished, failed, or is waiting for approval. Without this plugin those events stay inside the session. Local-only notifiers cannot reach a phone or a team chat.
+DeepSeek Harness already knows when a turn finished, failed, or is waiting for approval. Without this plugin, those events remain confined inside the session. If you are working across multiple parallel sessions or minimized in another app, you have to keep manually checking back.
 
-This plugin listens to the durable `session/event` firehose on the host half and POSTs a short text payload to the IM channels you enable. Webhook URLs are secrets: they live in DSH Credentials. The settings card stores only credential **names**.
+This plugin bridges that gap across four flexible notification layers:
+1. **Audio Chimes**: Synthesized Web Audio pentatonic chimes that play immediately upon turn completion, failure, or approval requests without external audio files.
+2. **Cross-Session Toasts**: On-screen floating banners that alert you across sessions with an interactive **"Go to session"** button to jump directly to the session that fired the event.
+3. **Desktop / OS Push Notifications**: Native Windows, macOS, Linux, and DSH Desktop notifications via HTML5 `Notification API` with window focus and session switching on click.
+4. **Remote IM Webhooks**: Outbound JSON webhooks for Feishu, WeCom, DingTalk, Slack, Discord, or generic custom endpoints. Webhook URLs are kept secret in DSH Credentials.
 
 ## Architecture
 
 ```mermaid
-graph LR
+graph TD
   A[DSH session/event] --> B[plugin-notify host]
   B -->|credential name| C[Credentials service]
   C -->|webhook URL| B
   B -->|POST JSON| D[Feishu / WeCom / DingTalk / Slack / Discord / custom]
   B -.->|macOS only| E[osascript notification]
-  F[Settings card] -->|credential names| B
+  B -->|SSE stream: /dsh-plugin-notify/events| F[Client Listener lib/client.js]
+  F -->|Web Audio API| G[Audio Chimes]
+  F -->|DOM overlay| H[Cross-Session Toasts]
+  F -->|Notification API| I[Desktop / OS Push]
+  J[Settings Card] -->|configuration| B
 ```
 
 ## Feature breakdown
@@ -60,14 +68,19 @@ graph LR
 - `turn/end` with `reason.kind === 'completed'` → `task_done`.
 - `turn/end` with any other reason → `error`.
 - `approval/asked` → `approval_requested`.
+- Streams real-time notifications to connected clients via SSE (`GET /dsh-plugin-notify/events`) on the Cordis `webServer` service.
 - Resolves each `webhooks.*` value as: legacy `http(s)://` URL (deprecated warning) → Credentials `resolve(credentialRef(name))` → `process.env[name]`.
 - Posts with `AbortSignal.timeout(timeoutMs)` (default 5000 ms). Failed POSTs are logged and never retried, and they never block the agent loop.
-- Optional DND window (`HH:MM`, including overnight ranges). Events are still observed; webhooks and local popups are skipped.
+- Optional DND window (`HH:MM`, including overnight ranges). Events are still observed; webhooks, chimes, and local popups are skipped.
 - `excludeSessionPrefixes` skips sessions whose id starts with a configured prefix.
 
 ### Client (`lib/client.js`)
 
-- Native settings card on `settings.plugin.item` (fallback `settings.section`).
+- Native settings card on `settings.plugin.item`.
+- Web Audio API dual-tone chime synthesizer for `task_done`, `error`, and `approval_requested` with interactive "Test sound" button.
+- Non-intrusive floating toast manager with session navigation button and interactive "Test toast" button.
+- Native HTML5 desktop push integration with permission request workflow.
+- Real-time SSE subscriber with exponential-backoff auto-reconnect and optional `notifyBackgroundOnly` filter.
 - Snapshot status `loading` / `unavailable` / `ready` before the form is writable.
 - Save writes every field and lists named failures.
 - Locale dictionaries: `en` and `zh` only. Russian UI is supplied at runtime by `dsh-russian-lang`.
@@ -91,6 +104,10 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 - id: plugin-notify
   name: '@goodandready-private/dsh-plugin-notify'
   config:
+    enableSound: false
+    enableToasts: false
+    enableDesktopNotifications: false
+    notifyBackgroundOnly: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
       wecom: NOTIFY_WECOM_WEBHOOK
@@ -111,6 +128,10 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
+| `enableSound` | boolean | `false` | Synthesize gentle Web Audio chimes on turn finish, error, or approval wait (opt-in). |
+| `enableToasts` | boolean | `false` | Show cross-session on-screen banner toasts with interactive session switching (opt-in). |
+| `enableDesktopNotifications` | boolean | `false` | Show native OS push notifications via HTML5 Notification API (opt-in). |
+| `notifyBackgroundOnly` | boolean | `false` | Only trigger audio, toasts, and push when event is from an inactive/background session. |
 | `webhooks.*` | string | empty | Credential **name** whose value is the webhook URL. Empty disables the channel. |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | Event whitelist. Empty restores the default three. |
 | `local` | boolean | `true` | macOS `osascript` popup; ignored on other platforms. |
@@ -160,10 +181,7 @@ The suite stubs `fetch` / a local HTTP listener. It does not call a real IM prov
 
 MIT © [GooDAnDReaDY](https://github.com/GooDAnDReaDY)
 
-## Changed in v0.2.5
+## Changelog
 
-- Runtime sources live in `lib/` instead of a misleading `dist/` tree; there is no TypeScript build.
-- The settings card stylesheet is tagged `data-dsh-plugin="dsh-plugin-notify"` so HMR and neighbour-plugin cleanup keep the card styles.
-- Automated tests cover IM channel bodies, missing credentials, recipient failure, AbortSignal, and locale reload without a `ru` dictionary.
-- Product README exists in English, Chinese, and Russian. `AGENTS.md` / `index.md` stay in Gitea and are not packed into the npm tarball.
+See [CHANGELOG.md](CHANGELOG.md) for full release and version history.
 
