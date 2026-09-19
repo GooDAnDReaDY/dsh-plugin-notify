@@ -1,6 +1,6 @@
 {
   "name": "@goodandready/dsh-plugin-notify",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "DSH plugin: audio chimes, cross-session toasts, desktop push, and IM webhooks for turn completion, errors, and approvals.",
   "license": "MIT",
   "type": "module",
