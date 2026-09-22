@@ -5,6 +5,7 @@
 <h3>回合完成、出错、等待审批时发送远程 IM Webhook 通知</h3>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@goodandready/dsh-plugin-notify"><img src="https://img.shields.io/npm/v/@goodandready/dsh-plugin-notify.svg?style=for-the-badge&color=6366f1&labelColor=1e1b4b" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10b981.svg?style=for-the-badge&labelColor=064e3b" alt="license"></a>
   <a href="https://github.com/topics/dsh-plugin"><img src="https://img.shields.io/badge/DSH-Plugin-8b5cf6.svg?style=for-the-badge&labelColor=2e1065" alt="DSH Plugin"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-20%2B-f59e0b.svg?style=for-the-badge&labelColor=451a03" alt="Node version"></a>
