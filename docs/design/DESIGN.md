@@ -3,7 +3,7 @@
 ## Product / Purpose
 - Purpose: multi-layer notification system for DeepSeek Harness: Web Audio pentatonic chimes, cross-session in-app screen toasts, native OS/desktop push notifications (Windows, macOS, Linux, DSH Desktop), and remote IM webhooks (Feishu, WeCom, DingTalk, Slack, Discord, custom).
 - Audience: DeepSeek Harness operators who work across multiple sessions, run background tasks, or want remote IM alerts without storing webhook secrets in plugin settings.
-- Status: public package `@goodandready/dsh-plugin-notify` 0.3.4, npm & GitHub.
+- Status: public package `@goodandready/dsh-plugin-notify` 0.3.5, npm & GitHub.
 
 ## User Surfaces
 - Web/UI:
