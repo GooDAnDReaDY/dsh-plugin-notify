@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts } from '../lib/index.js'
+import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -500,4 +500,25 @@ test('cleanupTurnStarts purges stale turnStarts entries older than TTL (issue #3
   assert.equal(turnStarts.has('fresh-session-1'), true)
   assert.equal(turnStarts.has('fresh-session-2'), true)
   turnStarts.clear()
+})
+
+test('sendSseHeartbeat writes ping comment to active clients and purges failed clients (issue #33 fix)', () => {
+  sseClients.clear()
+  const writes = []
+  const goodClient = {
+    write(chunk) { writes.push(chunk) }
+  }
+  const badClient = {
+    write() { throw new Error('EPIPE: connection reset by peer') }
+  }
+  sseClients.add(goodClient)
+  sseClients.add(badClient)
+
+  const sent = sendSseHeartbeat()
+  assert.equal(sent, 1)
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0], ': ping\n\n')
+  assert.equal(sseClients.has(goodClient), true)
+  assert.equal(sseClients.has(badClient), false)
+  sseClients.clear()
 })
