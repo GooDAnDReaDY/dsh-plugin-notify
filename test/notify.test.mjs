@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, sessionTitle, summarizeTurn } from '../lib/index.js'
+import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, sessionTitle, summarizeTurn, textOf } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -541,4 +541,19 @@ test('summarizeTurn safely reverse iterates events and handles missing session.e
 
   const summary = summarizeTurn({ events }, 2)
   assert.equal(summary, 'Turn 2 response; called 2 tools')
+})
+
+test('textOf handles plain strings, arrays of blocks, and strings in arrays (issue #35 fix)', () => {
+  assert.equal(textOf('Simple string response'), 'Simple string response')
+  assert.equal(textOf([{ type: 'text', text: 'Block text' }]), 'Block text')
+  assert.equal(textOf(['Part 1, ', 'Part 2']), 'Part 1, Part 2')
+  assert.equal(textOf(null), '')
+  assert.equal(textOf(undefined), '')
+  assert.equal(textOf(123), '')
+
+  const events = [{
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: 'String message in turn' } }
+  }]
+  assert.equal(summarizeTurn({ events }, 1), 'String message in turn')
 })
