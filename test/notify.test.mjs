@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients } from '../lib/index.js'
+import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, sessionTitle, summarizeTurn } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -521,4 +521,24 @@ test('sendSseHeartbeat writes ping comment to active clients and purges failed c
   assert.equal(sseClients.has(goodClient), true)
   assert.equal(sseClients.has(badClient), false)
   sseClients.clear()
+})
+
+test('summarizeTurn safely reverse iterates events and handles missing session.events (issue #34 fix)', () => {
+  assert.equal(summarizeTurn({}, 1), '(no text output)')
+  assert.equal(summarizeTurn({ events: null }, 1), '(no text output)')
+  assert.equal(sessionTitle({ id: 'fallback-id' }), 'fallback-id')
+
+  const events = []
+  for (let i = 0; i < 500; i++) {
+    events.push({ type: 'tool/call', data: { turn: 1 } })
+  }
+  events.push({ type: 'tool/call', data: { turn: 2 } })
+  events.push({ type: 'tool/call', data: { turn: 2 } })
+  events.push({
+    type: 'assistant/message',
+    data: { turn: 2, message: { content: [{ type: 'text', text: 'Turn 2 response' }] } }
+  })
+
+  const summary = summarizeTurn({ events }, 2)
+  assert.equal(summary, 'Turn 2 response; called 2 tools')
 })
