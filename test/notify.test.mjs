@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, name, NS, resolveWebhookValue, broadcastSse } from '../lib/index.js'
+import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -484,3 +484,20 @@ test('deliveries and warnings are routed through ctx.logger without console call
   }
 })
 
+
+test('cleanupTurnStarts purges stale turnStarts entries older than TTL (issue #32 fix)', () => {
+  turnStarts.clear()
+  const now = 10000000
+  turnStarts.set('stale-session-1', now - 8000000)
+  turnStarts.set('stale-session-2', now - 7200001)
+  turnStarts.set('fresh-session-1', now - 3600000)
+  turnStarts.set('fresh-session-2', now - 1000)
+
+  const deleted = cleanupTurnStarts(7200000, now)
+  assert.equal(deleted, 2)
+  assert.equal(turnStarts.has('stale-session-1'), false)
+  assert.equal(turnStarts.has('stale-session-2'), false)
+  assert.equal(turnStarts.has('fresh-session-1'), true)
+  assert.equal(turnStarts.has('fresh-session-2'), true)
+  turnStarts.clear()
+})
