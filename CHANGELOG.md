@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.3.3
+## [0.3.4] - 2026-09-24
+
+### Fixed
+- **Memory Leak in Turn Tracking (#32)**: Added TTL-based cleanup (30m max age) for stale `turnStarts` entries with automatic pruning on turn events.
+- **SSE Connection Drops on Reverse Proxies (#33)**: Added periodic 25s keepalive ping comments (`: ping\n\n`) on `/dsh-plugin-notify/events` with unreferenced timer and automatic dead socket removal.
+- **Reverse Iteration in Session Summarization (#34)**: Optimized `summarizeTurn` from O(N) forward iteration to reverse iteration with early break once the turn assistant message is found.
+- **String Content Handling in textOf (#35)**: Fixed `textOf(content)` to properly return string content when passed a primitive string or strings within content arrays.
+
+### Documented
+- **Architectural Exception for Client Bundle (#36)**: Formally documented the conscious >600-line monolithic bundle exception for `lib/client.js` in `docs/design/DESIGN.md` in accordance with DSH `ModuleLoader` architecture.
+
+## [0.3.3] - 2026-09-24
 
 ### Fixed
 - The settings card no longer waits for the removed `settingsScope` service. It uses `configForms` on current DeepSeek Harness (#37).
