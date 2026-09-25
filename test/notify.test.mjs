@@ -379,9 +379,13 @@ test('Config schema validates sound, toast, and desktop notification fields with
   assert.equal(cfg.notifyBackgroundOnly, true)
 })
 
-test('SSE route registers on webServer, rejects untrusted requests, and handles trusted stream', async () => {
+test('SSE route delegates authentication to DSH connection service with loopback fallback (issue #21 fix)', async () => {
   let routeDef = null
+  let connectionRejection = 403
   const ctx = context({
+    connection: {
+      requestRejection: (_req) => connectionRejection,
+    },
     webServer: {
       register(def) {
         routeDef = def
@@ -394,23 +398,56 @@ test('SSE route registers on webServer, rejects untrusted requests, and handles 
   assert.equal(routeDef.kind, 'exact')
   assert.equal(routeDef.path, '/dsh-plugin-notify/events')
 
-  // 1. Untrusted request (missing origin/sec-fetch-site/loopback) -> 403 Forbidden
-  const untrustedRes = {
+  // 1. Method not allowed
+  const methodNotAllowedRes = {
     statusCode: 0,
-    writeHead(status) { untrustedRes.statusCode = status },
+    headers: {},
+    setHeader(k, v) { this.headers[k] = v },
+    writeHead(status, hdrs) { this.statusCode = status; Object.assign(this.headers, hdrs) },
     end() {},
   }
-  routeDef.handler({ method: 'GET', headers: {} }, untrustedRes)
-  assert.equal(untrustedRes.statusCode, 403)
+  routeDef.handler({ method: 'POST', headers: {} }, methodNotAllowedRes)
+  assert.equal(methodNotAllowedRes.statusCode, 405)
+  assert.equal(methodNotAllowedRes.headers['allow'], 'GET')
 
-  // 2. Trusted request (same-origin sec-fetch-site) -> 200 Stream
+  // 2. Direct network request rejected by connection service with 401
+  connectionRejection = 401
+  const unauthorizedRes = {
+    statusCode: 0,
+    writeHead(status) { unauthorizedRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: { authorization: 'Bearer spoofed-token', 'sec-fetch-site': 'same-origin' },
+    socket: { remoteAddress: '203.0.113.50' },
+  }, unauthorizedRes)
+  assert.equal(unauthorizedRes.statusCode, 401)
+
+  // 3. Direct network request rejected by connection service with 403
+  connectionRejection = 403
+  const forbiddenRes = {
+    statusCode: 0,
+    writeHead(status) { forbiddenRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: { authorization: 'Bearer spoofed-token', host: 'attacker.test' },
+    socket: { remoteAddress: '203.0.113.50' },
+  }, forbiddenRes)
+  assert.equal(forbiddenRes.statusCode, 403)
+
+  // 4. Authorized Web UI request admitted by connection service (void 0) -> 200 Stream
+  connectionRejection = void 0
   const headers = {}
   const chunks = []
   const listeners = {}
 
   const req = {
     method: 'GET',
-    headers: { 'sec-fetch-site': 'same-origin' },
+    headers: { cookie: 'dsh_session=valid' },
+    socket: { remoteAddress: '203.0.113.50' },
     on(evt, cb) { listeners[evt] = cb },
   }
   const res = {
@@ -436,8 +473,51 @@ test('SSE route registers on webServer, rejects untrusted requests, and handles 
 
   assert.ok(chunks.some((c) => c.includes('"sessionId":"sse-test-session"') && c.includes('"kind":"task_done"')))
 
-  // Clean close
   if (listeners.close) listeners.close()
+})
+
+test('SSE route falls back to loopback-only check when connection service is absent (issue #21 fix)', () => {
+  let routeDef = null
+  const ctx = context({
+    webServer: {
+      register(def) {
+        routeDef = def
+        return () => {}
+      },
+    },
+  })
+  apply(ctx, { local: false })
+
+  // Non-loopback with spoofed headers is rejected
+  const rejectedRes = {
+    statusCode: 0,
+    writeHead(status) { rejectedRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: { authorization: 'Bearer fake', 'sec-fetch-site': 'same-origin' },
+    socket: { remoteAddress: '203.0.113.100' },
+  }, rejectedRes)
+  assert.equal(rejectedRes.statusCode, 403)
+
+  // Loopback request is admitted
+  const loopbackRes = {
+    statusCode: 0,
+    headers: {},
+    writeHead(status, hdrs) { loopbackRes.statusCode = status; Object.assign(loopbackRes.headers, hdrs) },
+    write() {},
+    end() {},
+    on() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: {},
+    socket: { remoteAddress: '127.0.0.1' },
+    on() {},
+  }, loopbackRes)
+  assert.equal(loopbackRes.statusCode, 200)
+  assert.equal(loopbackRes.headers['Content-Type'], 'text/event-stream')
 })
 
 test('client does not register settings.section slot (issue #16 fix)', () => {
