@@ -193,11 +193,17 @@ Expected output:
 ✔ AbortSignal.timeout is attached to webhook POST
 ✔ excluded session prefixes suppress notifications
 ✔ Config schema validates sound, toast, and desktop notification fields with opt-in defaults
-✔ SSE route registers on webServer, rejects untrusted requests, and handles trusted stream
+✔ SSE route delegates authentication to DSH connection service with loopback fallback (issue #21 fix)
+✔ SSE route falls back to loopback-only check when connection service is absent (issue #21 fix)
 ✔ client does not register settings.section slot (issue #16 fix)
 ✔ deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)
-ℹ tests 15
-ℹ pass 15
+✔ cleanupTurnStarts purges stale turnStarts entries older than TTL (issue #32 fix)
+✔ sendSseHeartbeat writes ping comment to active clients and purges failed clients (issue #33 fix)
+✔ summarizeTurn safely reverse iterates events and handles missing session.events (issue #34 fix)
+✔ textOf handles plain strings, arrays of blocks, and strings in arrays (issue #35 fix)
+✔ lifecycle: apply -> dispose closes SSE clients, resets turnStarts, and isolates re-apply (issue #40 fix)
+ℹ tests 21
+ℹ pass 21
 ℹ fail 0
 ```
 
