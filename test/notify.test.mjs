@@ -5,13 +5,14 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, sessionTitle, summarizeTurn, textOf } from '../lib/index.js'
+import { apply, Config, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
 
 function context(extra = {}) {
-  let listener
+  const listeners = new Map()
+  const disposers = []
   const logs = { warn: [], debug: [], info: [], error: [] }
   const ctx = {
     logger: {
@@ -22,11 +23,32 @@ function context(extra = {}) {
     },
     logs,
     on(topic, callback) {
-      assert.equal(topic, 'session/event')
-      listener = callback
+      if (!listeners.has(topic)) listeners.set(topic, [])
+      listeners.get(topic).push(callback)
+      return () => {
+        const arr = listeners.get(topic) || []
+        const idx = arr.indexOf(callback)
+        if (idx !== -1) arr.splice(idx, 1)
+      }
     },
     emit(session, event) {
-      listener(session, event)
+      const arr = listeners.get('session/event') || []
+      for (const cb of [...arr]) cb(session, event)
+    },
+    effect(callback) {
+      const dispose = callback()
+      if (typeof dispose === 'function') disposers.push(dispose)
+      return dispose
+    },
+    dispose() {
+      for (const disp of disposers.splice(0)) {
+        try { disp() } catch {}
+      }
+      const disposeListeners = listeners.get('dispose') || []
+      for (const cb of [...disposeListeners]) {
+        try { cb() } catch {}
+      }
+      listeners.clear()
     },
     inject(deps, cb) {
       if (Array.isArray(deps) && deps.includes('settings')) {
@@ -379,9 +401,13 @@ test('Config schema validates sound, toast, and desktop notification fields with
   assert.equal(cfg.notifyBackgroundOnly, true)
 })
 
-test('SSE route registers on webServer, rejects untrusted requests, and handles trusted stream', async () => {
+test('SSE route delegates authentication to DSH connection service with loopback fallback (issue #21 fix)', async () => {
   let routeDef = null
+  let connectionRejection = 403
   const ctx = context({
+    connection: {
+      requestRejection: (_req) => connectionRejection,
+    },
     webServer: {
       register(def) {
         routeDef = def
@@ -394,23 +420,56 @@ test('SSE route registers on webServer, rejects untrusted requests, and handles 
   assert.equal(routeDef.kind, 'exact')
   assert.equal(routeDef.path, '/dsh-plugin-notify/events')
 
-  // 1. Untrusted request (missing origin/sec-fetch-site/loopback) -> 403 Forbidden
-  const untrustedRes = {
+  // 1. Method not allowed
+  const methodNotAllowedRes = {
     statusCode: 0,
-    writeHead(status) { untrustedRes.statusCode = status },
+    headers: {},
+    setHeader(k, v) { this.headers[k] = v },
+    writeHead(status, hdrs) { this.statusCode = status; Object.assign(this.headers, hdrs) },
     end() {},
   }
-  routeDef.handler({ method: 'GET', headers: {} }, untrustedRes)
-  assert.equal(untrustedRes.statusCode, 403)
+  routeDef.handler({ method: 'POST', headers: {} }, methodNotAllowedRes)
+  assert.equal(methodNotAllowedRes.statusCode, 405)
+  assert.equal(methodNotAllowedRes.headers['allow'], 'GET')
 
-  // 2. Trusted request (same-origin sec-fetch-site) -> 200 Stream
+  // 2. Direct network request rejected by connection service with 401
+  connectionRejection = 401
+  const unauthorizedRes = {
+    statusCode: 0,
+    writeHead(status) { unauthorizedRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: { authorization: 'Bearer spoofed-token', 'sec-fetch-site': 'same-origin' },
+    socket: { remoteAddress: '203.0.113.50' },
+  }, unauthorizedRes)
+  assert.equal(unauthorizedRes.statusCode, 401)
+
+  // 3. Direct network request rejected by connection service with 403
+  connectionRejection = 403
+  const forbiddenRes = {
+    statusCode: 0,
+    writeHead(status) { forbiddenRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: { authorization: 'Bearer spoofed-token', host: 'attacker.test' },
+    socket: { remoteAddress: '203.0.113.50' },
+  }, forbiddenRes)
+  assert.equal(forbiddenRes.statusCode, 403)
+
+  // 4. Authorized Web UI request admitted by connection service (void 0) -> 200 Stream
+  connectionRejection = void 0
   const headers = {}
   const chunks = []
   const listeners = {}
 
   const req = {
     method: 'GET',
-    headers: { 'sec-fetch-site': 'same-origin' },
+    headers: { cookie: 'dsh_session=valid' },
+    socket: { remoteAddress: '203.0.113.50' },
     on(evt, cb) { listeners[evt] = cb },
   }
   const res = {
@@ -436,8 +495,51 @@ test('SSE route registers on webServer, rejects untrusted requests, and handles 
 
   assert.ok(chunks.some((c) => c.includes('"sessionId":"sse-test-session"') && c.includes('"kind":"task_done"')))
 
-  // Clean close
   if (listeners.close) listeners.close()
+})
+
+test('SSE route falls back to loopback-only check when connection service is absent (issue #21 fix)', () => {
+  let routeDef = null
+  const ctx = context({
+    webServer: {
+      register(def) {
+        routeDef = def
+        return () => {}
+      },
+    },
+  })
+  apply(ctx, { local: false })
+
+  // Non-loopback with spoofed headers is rejected
+  const rejectedRes = {
+    statusCode: 0,
+    writeHead(status) { rejectedRes.statusCode = status },
+    end() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: { authorization: 'Bearer fake', 'sec-fetch-site': 'same-origin' },
+    socket: { remoteAddress: '203.0.113.100' },
+  }, rejectedRes)
+  assert.equal(rejectedRes.statusCode, 403)
+
+  // Loopback request is admitted
+  const loopbackRes = {
+    statusCode: 0,
+    headers: {},
+    writeHead(status, hdrs) { loopbackRes.statusCode = status; Object.assign(loopbackRes.headers, hdrs) },
+    write() {},
+    end() {},
+    on() {},
+  }
+  routeDef.handler({
+    method: 'GET',
+    headers: {},
+    socket: { remoteAddress: '127.0.0.1' },
+    on() {},
+  }, loopbackRes)
+  assert.equal(loopbackRes.statusCode, 200)
+  assert.equal(loopbackRes.headers['Content-Type'], 'text/event-stream')
 })
 
 test('client does not register settings.section slot (issue #16 fix)', () => {
@@ -557,3 +659,130 @@ test('textOf handles plain strings, arrays of blocks, and strings in arrays (iss
   }]
   assert.equal(summarizeTurn({ events }, 1), 'String message in turn')
 })
+
+test('lifecycle: apply -> dispose closes SSE clients, resets turnStarts, and isolates re-apply (issue #40 fix)', async () => {
+  let registeredRoute = null
+  let unregisterCalled = false
+
+  const mockWebServer = () => ({
+    register(def) {
+      registeredRoute = def
+      return () => {
+        unregisterCalled = true
+        registeredRoute = null
+      }
+    },
+  })
+
+  const createMockResponse = () => {
+    const chunks = []
+    const listeners = {}
+    return {
+      statusCode: 0,
+      headers: {},
+      headersSent: false,
+      writableEnded: false,
+      ended: false,
+      chunks,
+      writeHead(status, hdrs) {
+        this.statusCode = status
+        this.headersSent = true
+        Object.assign(this.headers, hdrs)
+      },
+      write(chunk) {
+        if (this.writableEnded) throw new Error('write after end')
+        chunks.push(chunk)
+      },
+      end() {
+        this.ended = true
+        this.writableEnded = true
+        if (listeners.close) listeners.close()
+      },
+      destroy() {
+        this.ended = true
+        this.writableEnded = true
+        if (listeners.close) listeners.close()
+      },
+      on(evt, cb) { listeners[evt] = cb },
+    }
+  }
+
+  // === CYCLE 1 ===
+  const ctx1 = context({
+    webServer: mockWebServer(),
+    connection: { requestRejection: () => void 0 },
+  })
+  apply(ctx1, { local: false })
+
+  assert.ok(registeredRoute, 'route registered on cycle 1')
+  unregisterCalled = false
+
+  const client1 = createMockResponse()
+  registeredRoute.handler({ method: 'GET', headers: {} }, client1)
+
+  assert.equal(client1.statusCode, 200)
+  assert.equal(sseClients.has(client1), true, 'client1 registered in sseClients')
+  assert.ok(client1.chunks.some((c) => c.includes(': connected')))
+
+  // Turn starts in cycle 1
+  const s1 = session('sess-cycle-1')
+  ctx1.emit(s1, { type: 'turn/start' })
+  assert.equal(turnStarts.has('sess-cycle-1'), true, 'turnStarts has sess-cycle-1')
+
+  // Heartbeat reaches client1
+  const hb1 = sendSseHeartbeat()
+  assert.equal(hb1, 1)
+  assert.ok(client1.chunks.some((c) => c.includes(': ping')))
+
+  // Now DISPOSE cycle 1
+  ctx1.dispose()
+
+  // 1. All SSE clients closed and removed
+  assert.equal(client1.ended, true, 'client1 must be ended on dispose')
+  assert.equal(sseClients.size, 0, 'sseClients set must be empty after dispose')
+
+  // 2. turnStarts cleared
+  assert.equal(turnStarts.size, 0, 'turnStarts map must be empty after dispose')
+
+  // 3. Web server route unregistered
+  assert.equal(unregisterCalled, true, 'webServer route unregister callback invoked')
+
+  // === CYCLE 2 (re-apply) ===
+  const ctx2 = context({
+    webServer: mockWebServer(),
+    connection: { requestRejection: () => void 0 },
+  })
+  apply(ctx2, { local: false })
+
+  assert.ok(registeredRoute, 'route registered on cycle 2')
+  const client2 = createMockResponse()
+  registeredRoute.handler({ method: 'GET', headers: {} }, client2)
+
+  assert.equal(client2.statusCode, 200)
+  assert.equal(sseClients.has(client2), true, 'client2 registered in sseClients')
+  assert.equal(sseClients.has(client1), false, 'old client1 not in sseClients')
+
+  const client1ChunksBefore = client1.chunks.length
+
+  // Turn start and end in cycle 2
+  const s2 = session('sess-cycle-2')
+  ctx2.emit(s2, { type: 'turn/start' })
+  assert.equal(turnStarts.has('sess-cycle-2'), true)
+  ctx2.emit(s2, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+
+  // Verify client2 received broadcast event
+  assert.ok(client2.chunks.some((c) => c.includes('"sessionId":"sess-cycle-2"') && c.includes('"kind":"task_done"')))
+
+  // Verify old client1 received NOTHING after dispose
+  assert.equal(client1.chunks.length, client1ChunksBefore, 'old client1 received no broadcasts after dispose')
+
+  // Verify turnStarts is empty after turn end
+  assert.equal(turnStarts.has('sess-cycle-2'), false)
+
+  // Dispose cycle 2
+  ctx2.dispose()
+  assert.equal(client2.ended, true, 'client2 must be ended on dispose')
+  assert.equal(sseClients.size, 0, 'sseClients must be empty after cycle 2 dispose')
+  assert.equal(turnStarts.size, 0, 'turnStarts must be empty after cycle 2 dispose')
+})
+
