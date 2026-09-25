@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-09-25
+
+### Fixed
+- **SSE Authentication Security Boundary (#21)**: Replaced client-controlled header checks (`Authorization.length > 5`, `sec-fetch-site`) with authentic DSH session verification via `connection.requestRejection(req)` (`Host`/`Origin` fence and browser session validation), with loopback-only fallback when connection service is absent.
+- **SSE Clients & Turn Starts Lifecycle Leak (#40)**: Bound SSE clients, route registration, heartbeat timer, and `turnStarts` map to unified effect-owned lifecycle. On plugin dispose, active SSE connections are cleanly terminated with closing comment and ended, route is unregistered, and `turnStarts` map is cleared to ensure complete isolation on reload.
+
 ## [0.3.5] - 2026-09-24
 
 ### Fixed
