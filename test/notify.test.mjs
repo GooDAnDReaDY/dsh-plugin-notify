@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf } from '../lib/index.js'
+import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf, isTrustedRequest, getRequestRejection } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -336,6 +336,7 @@ test('recipient HTTP failure does not throw out of the session loop', async () =
       ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
     })
     await new Promise((resolve) => setTimeout(resolve, 80))
+    assert.ok(ctx.logs.warn.some((m) => m.includes('[plugin-notify] custom webhook POST failed: Error: connect reset')))
   } finally {
     globalThis.fetch = original
   }
@@ -540,6 +541,34 @@ test('SSE route falls back to loopback-only check when connection service is abs
   }, loopbackRes)
   assert.equal(loopbackRes.statusCode, 200)
   assert.equal(loopbackRes.headers['Content-Type'], 'text/event-stream')
+})
+
+test('isTrustedRequest and getRequestRejection enforce origin and session checks with loopback fallback (issue #46 fix)', () => {
+  // 1. Missing or invalid request object
+  assert.equal(isTrustedRequest(null), false)
+  assert.equal(getRequestRejection(null), 403)
+  assert.equal(isTrustedRequest({}), false)
+  assert.equal(getRequestRejection({}), 403)
+
+  // 2. Loopback request without connection service -> trusted
+  const loopbackReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
+  assert.equal(isTrustedRequest(loopbackReq), true)
+  assert.equal(getRequestRejection(loopbackReq), void 0)
+
+  // 3. Remote IP without connection service -> rejected
+  const remoteReq = { headers: {}, socket: { remoteAddress: '198.51.100.23' } }
+  assert.equal(isTrustedRequest(remoteReq), false)
+  assert.equal(getRequestRejection(remoteReq), 403)
+
+  // 4. Target context with connection service rejection
+  const rejCtx = { connection: { requestRejection: () => 401 } }
+  assert.equal(isTrustedRequest(loopbackReq, rejCtx), false)
+  assert.equal(getRequestRejection(loopbackReq, rejCtx), 401)
+
+  // 5. Target context with connection service approval
+  const okCtx = { connection: { requestRejection: () => void 0 } }
+  assert.equal(isTrustedRequest(remoteReq, okCtx), true)
+  assert.equal(getRequestRejection(remoteReq, okCtx), void 0)
 })
 
 test('client does not register settings.section slot (issue #16 fix)', () => {
@@ -941,3 +970,136 @@ test('activation on DSH 0.2.0-rc.1 without settings.register activates cleanly (
 
 
 
+test("multi-instance SSE client isolation: disposing one context does not close clients of other contexts (issue #50 fix)", () => {
+  let routeDef1 = null
+  let routeDef2 = null
+
+  const mockServer1 = {
+    register(def) {
+      if (def.path === "/dsh-plugin-notify/events") routeDef1 = def
+      return () => { if (def.path === "/dsh-plugin-notify/events") routeDef1 = null }
+    },
+  }
+  const mockServer2 = {
+    register(def) {
+      if (def.path === "/dsh-plugin-notify/events") routeDef2 = def
+      return () => { if (def.path === "/dsh-plugin-notify/events") routeDef2 = null }
+    },
+  }
+
+  const createMockResponse = () => {
+    const chunks = []
+    const listeners = {}
+    return {
+      statusCode: 0,
+      headers: {},
+      headersSent: false,
+      writableEnded: false,
+      ended: false,
+      chunks,
+      writeHead(status, hdrs) {
+        this.statusCode = status
+        this.headersSent = true
+        Object.assign(this.headers, hdrs)
+      },
+      write(chunk) {
+        if (this.writableEnded) throw new Error("write after end")
+        chunks.push(chunk)
+      },
+      end() {
+        this.ended = true
+        this.writableEnded = true
+        if (listeners.close) listeners.close()
+      },
+      destroy() {
+        this.ended = true
+        this.writableEnded = true
+        if (listeners.close) listeners.close()
+      },
+      on(evt, cb) { listeners[evt] = cb },
+    }
+  }
+
+  const ctx1 = context({ webServer: mockServer1, connection: { requestRejection: () => void 0 } })
+  const ctx2 = context({ webServer: mockServer2, connection: { requestRejection: () => void 0 } })
+
+  apply(ctx1, { local: false })
+  apply(ctx2, { local: false })
+
+  assert.ok(routeDef1, "context 1 registered events route")
+  assert.ok(routeDef2, "context 2 registered events route")
+
+  const client1 = createMockResponse()
+  const client2 = createMockResponse()
+
+  routeDef1.handler({ method: "GET", headers: {} }, client1)
+  routeDef2.handler({ method: "GET", headers: {} }, client2)
+
+  assert.equal(sseClients.has(client1), true, "client 1 registered in global sseClients")
+  assert.equal(sseClients.has(client2), true, "client 2 registered in global sseClients")
+
+  // Dispose only context 1
+  ctx1.dispose()
+
+  // Client 1 must be closed and removed from sseClients
+  assert.equal(client1.ended, true, "client 1 must be ended when ctx1 disposes")
+  assert.equal(sseClients.has(client1), false, "client 1 must be deleted from sseClients")
+
+  // Client 2 MUST STILL BE OPEN and registered!
+  assert.equal(client2.ended, false, "client 2 must remain open when ctx1 disposes")
+  assert.equal(sseClients.has(client2), true, "client 2 must still be present in sseClients")
+
+  // Context 2 event broadcast must still deliver to client 2
+  const s2 = session("isolation-session")
+  ctx2.emit(s2, { type: "turn/start" })
+  ctx2.emit(s2, { type: "turn/end", data: { reason: { kind: "completed" }, turn: 1 } })
+
+  assert.ok(
+    client2.chunks.some((c) => c.includes('"sessionId":"isolation-session"') && c.includes('"kind":"task_done"')),
+    "client 2 still receives broadcasts after ctx1 disposal"
+  )
+
+  // Finally dispose context 2
+  ctx2.dispose()
+  assert.equal(client2.ended, true, "client 2 ended after ctx2 disposes")
+  assert.equal(sseClients.has(client2), false, "client 2 removed from sseClients")
+})
+test("cleanupTurnStarts enforces maxSize bound and evicts oldest entries under burst (issue #51 fix)", () => {
+  turnStarts.clear()
+  const now = Date.now()
+
+  // 1. cleanupTurnStarts directly enforces maxSize
+  for (let i = 0; i < 150; i++) {
+    turnStarts.set(`burst-session-${i}`, now + i)
+  }
+  assert.equal(turnStarts.size, 150)
+
+  // Clean with maxSize=100 (all entries are fresh so TTL alone would delete 0)
+  const deleted = cleanupTurnStarts(7200000, now, 100)
+  assert.equal(deleted, 51) // 150 - 51 = 99 (strictly < 100)
+  assert.equal(turnStarts.size, 99)
+  // Verify FIFO eviction: oldest (0..50) removed, newest (51..149) retained
+  assert.equal(turnStarts.has("burst-session-0"), false)
+  assert.equal(turnStarts.has("burst-session-50"), false)
+  assert.equal(turnStarts.has("burst-session-51"), true)
+  assert.equal(turnStarts.has("burst-session-149"), true)
+
+  // 2. Integration: simulate turn/start events in apply() context
+  turnStarts.clear()
+  const ctx = context()
+  apply(ctx, { local: false })
+
+  // Send 150 consecutive turn/start events without any turn/end
+  for (let i = 0; i < 150; i++) {
+    ctx.emit(session(`auto-burst-${i}`), { type: "turn/start" })
+  }
+
+  // Under burst, turnStarts must never grow unbounded and stay bounded around 100
+  assert.ok(turnStarts.size <= 101, `turnStarts size (${turnStarts.size}) must be bounded <= 101`)
+  assert.ok(turnStarts.size >= 99, `turnStarts size (${turnStarts.size}) should be around 100`)
+  // Oldest entries should have been pruned
+  assert.equal(turnStarts.has("auto-burst-0"), false)
+  assert.equal(turnStarts.has("auto-burst-149"), true)
+
+  turnStarts.clear()
+})
