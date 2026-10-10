@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, plainConfig, name, NS, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf } from '../lib/index.js'
+import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -563,9 +563,10 @@ test('client does not register settings.section slot (issue #16 fix)', () => {
   }
   client.apply(ctx)
   const hasSection = registeredSlots.some((s) => s.name === 'settings.section')
-  const hasItem = registeredSlots.some((s) => s.name === 'settings.plugin.item')
+  const itemSlot = registeredSlots.find((s) => s.name === 'settings.plugin.item')
   assert.equal(hasSection, false, 'settings.section must not be registered')
-  assert.equal(hasItem, true, 'settings.plugin.item must be registered')
+  assert.ok(itemSlot, 'settings.plugin.item must be registered')
+  assert.equal(itemSlot.key, 'plugin-notify', 'settings.plugin.item key must match entry id ROW_ID (issue #54 fix)')
 })
 
 test('deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)', async () => {
@@ -785,4 +786,158 @@ test('lifecycle: apply -> dispose closes SSE clients, resets turnStarts, and iso
   assert.equal(sseClients.size, 0, 'sseClients must be empty after cycle 2 dispose')
   assert.equal(turnStarts.size, 0, 'turnStarts must be empty after cycle 2 dispose')
 })
+
+test('settings.register passes ENTRY_ID and survives TypeError with warning (issue #55 fix)', () => {
+  let registeredNs = null
+  const warnings = []
+  const ctx = context({
+    logger: {
+      warn(msg) { warnings.push(msg) },
+      debug() {},
+      info() {},
+      error() {},
+    },
+    inject(deps, cb) {
+      if (Array.isArray(deps) && deps.includes('settings')) {
+        cb({
+          settings: {
+            register(ns, schema, opts) {
+              registeredNs = ns
+              return { get: () => ({ local: false }) }
+            },
+          },
+        })
+      }
+    },
+  })
+  apply(ctx, { local: false })
+  assert.equal(registeredNs, ENTRY_ID, 'register should receive ENTRY_ID (plugin-notify)')
+
+  // Test TypeError recovery (Desktop crash class)
+  let describeCalled = false
+  const ctxThrow = context({
+    logger: {
+      warn(msg) { warnings.push(msg) },
+      debug() {},
+      info() {},
+      error() {},
+    },
+    inject(deps, cb) {
+      if (Array.isArray(deps) && deps.includes('settings')) {
+        cb({
+          settings: {
+            register() {
+              throw new TypeError('Invalid namespace')
+            },
+            describe() {
+              describeCalled = true
+              return [{ ns: ENTRY_ID, value: { local: false } }]
+            },
+          },
+        })
+      }
+    },
+  })
+  assert.doesNotThrow(() => apply(ctxThrow, { local: false }))
+  assert.equal(describeCalled, true, 'fell back to describe on register TypeError')
+  assert.ok(warnings.some((w) => w.includes('settings.register')), 'warning was logged')
+})
+
+test('describe fallback dynamically updates on settings changes and volatile-update (issue #48 fix)', async () => {
+  let settingsVal = { local: false, timeoutMs: 1000 }
+  const listeners = new Map()
+  const ctx = {
+    on(event, cb) {
+      if (!listeners.has(event)) listeners.set(event, [])
+      listeners.get(event).push(cb)
+    },
+    emit(event) {
+      for (const cb of listeners.get(event) || []) cb()
+    },
+    logger: { warn() {}, debug() {}, info() {}, error() {} },
+    inject(deps, cb) {
+      if (Array.isArray(deps) && deps.includes('settings')) {
+        cb({
+          settings: {
+            describe() {
+              return [{ ns: ENTRY_ID, value: settingsVal, revision: 1 }]
+            },
+            async replace(ns, next, rev) {
+              settingsVal = next
+              return { ok: true }
+            },
+          },
+        })
+      }
+    },
+  }
+
+  apply(ctx, { local: true })
+
+  // Trigger loader/volatile-update
+  settingsVal = { local: false, timeoutMs: 9999 }
+  ctx.emit('loader/volatile-update')
+
+  // Trigger settings/document-updated
+  settingsVal = { local: false, timeoutMs: 7777 }
+  ctx.emit('settings/document-updated')
+})
+
+test('getConfig unwraps volatile boxes so session/event does not throw (issue #47 fix)', async () => {
+  const ctx = context()
+  // Simulate volatile boxes as received from Cordis / Schemastery volatile fields
+  const boxedConfig = {
+    events: { get: () => ['task_done', 'error'] },
+    timeoutMs: { get: () => 3000 },
+    local: { get: () => false },
+    includeSession: { get: () => true },
+    includeDuration: { get: () => true },
+    excludeSessionPrefixes: { get: () => ['test-'] },
+  }
+
+  apply(ctx, boxedConfig)
+  const s = session('sess-volatile-1')
+
+  assert.doesNotThrow(() => {
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+  })
+})
+
+test('activation on DSH 0.2.0-rc.1 without settings.register activates cleanly (issue #42 fix)', async () => {
+  const errors = []
+  const warnings = []
+  const ctx = {
+    on() {},
+    logger: {
+      warn(msg) { warnings.push(msg) },
+      debug() {},
+      info() {},
+      error(msg) { errors.push(msg) },
+    },
+    inject(deps, cb) {
+      if (Array.isArray(deps) && deps.includes('settings')) {
+        // DSH 0.2.0-rc.1 has describe, replace etc., but NO register
+        cb({
+          settings: {
+            describe() {
+              return [{ ns: ENTRY_ID, value: { local: true, timeoutMs: 4000 } }]
+            },
+            async replace() {
+              return { ok: true }
+            },
+          },
+        })
+      }
+    },
+  }
+
+  assert.doesNotThrow(() => apply(ctx, { local: false }))
+  assert.equal(errors.length, 0, 'no errors logged on 0.2.0-rc.1 activation')
+  assert.equal(warnings.length, 0, 'no warnings logged when register is cleanly absent')
+})
+
+
+
+
 

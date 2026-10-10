@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-10
+
+### Fixed
+- **Settings registration namespace & Desktop crash protection** (#55): Use canonical `ENTRY_ID = 'plugin-notify'` instead of scoped package name in `settings.register`; wrap call with `try / catch` logging warning instead of throwing `TypeError` in DSH Desktop.
+- **Settings form slot binding** (#54): Bind UI `settings.plugin.item` slot `key` to `ROW_ID` (`'plugin-notify'`), and prioritize `ROW_ID` in `configForms` candidates over legacy `NS`.
+- **Dynamic settings observation** (#48): Make describe settings fallback reactive: observe `loader/volatile-update`, `settings/document-updated`, and `settings/updated` to dynamically refresh settings when edited in UI or external config.
+- **Config unboxing guarantee** (#47): Guarantee `getConfig()` always unwraps volatile boxes via `unwrapConfig(config ?? {})`, preventing `TypeError` during `session/event` event unboxing.
+- **DSH 0.2.0-rc.1 clean activation & volatile schema** (#42): Guarantee clean activation on DSH 0.2.0-rc.1 when `settings.register` is absent; confirm all user-facing fields in `Config` have `.volatile()` markers.
+
 ## [0.4.0] - 2026-10-05
 
 ### Added
