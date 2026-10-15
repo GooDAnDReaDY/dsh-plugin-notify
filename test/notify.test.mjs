@@ -161,7 +161,7 @@ test('public package identity matches host, client and patch sites', () => {
   assert.match(fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8'), /@goodandready\/dsh-plugin-notify/)
   const client = fs.readFileSync(clientPath, 'utf8')
   assert.match(client, /id: '@goodandready\/dsh-plugin-notify'/)
-  assert.match(client, /settings\.plugin\.item/)
+  assert.match(client, /plugins\.item/)
   assert.match(client, /dataset\.dshPlugin = 'dsh-plugin-notify'/)
   assert.equal(pkg.exports['.'], './lib/index.js')
   assert.equal(pkg.exports['./client'], './lib/client.js')
@@ -571,7 +571,7 @@ test('isTrustedRequest and getRequestRejection enforce origin and session checks
   assert.equal(getRequestRejection(remoteReq, okCtx), void 0)
 })
 
-test('client does not register settings.section slot (issue #16 fix)', () => {
+test('client does not register settings.section or dead settings.plugin.item slots (issues #16, #54, #59 fix)', () => {
   const registeredSlots = []
   const client = loadClient()
   const ctx = {
@@ -592,10 +592,15 @@ test('client does not register settings.section slot (issue #16 fix)', () => {
   }
   client.apply(ctx)
   const hasSection = registeredSlots.some((s) => s.name === 'settings.section')
-  const itemSlot = registeredSlots.find((s) => s.name === 'settings.plugin.item')
+  const hasDeadItem = registeredSlots.some((s) => s.name === 'settings.plugin.item')
+  const pluginsItemSlot = registeredSlots.find((s) => s.name === 'plugins.item')
+  const rowConfigSlot = registeredSlots.find((s) => s.name === 'plugins.row.config')
+
   assert.equal(hasSection, false, 'settings.section must not be registered')
-  assert.ok(itemSlot, 'settings.plugin.item must be registered')
-  assert.equal(itemSlot.key, 'plugin-notify', 'settings.plugin.item key must match entry id ROW_ID (issue #54 fix)')
+  assert.equal(hasDeadItem, false, 'dead settings.plugin.item slot must not be registered (issue #59 fix)')
+  assert.ok(pluginsItemSlot, 'plugins.item must be registered')
+  assert.equal(pluginsItemSlot.id, 'plugin-notify', 'plugins.item id must match ROW_ID')
+  assert.ok(rowConfigSlot, 'plugins.row.config fallback seat must be registered')
 })
 
 test('deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)', async () => {

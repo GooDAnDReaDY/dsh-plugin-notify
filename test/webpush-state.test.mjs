@@ -44,9 +44,11 @@ test('resolveStatePath: explicit stateFile wins, then DSH_HOME, then ~/.dsh', (t
     else process.env.DSH_HOME = prevHome
   })
 
-  assert.equal(resolveStatePath({ stateFile: ' /tmp/x/state.json ' }), '/tmp/x/state.json')
+  assert.equal(resolveStatePath({ stateFile: ' /tmp/x/state.json ' }), path.normalize('/tmp/x/state.json'))
 
   process.env.DSH_HOME = '/tmp/dsh-home'
+  // Relative path is resolved against DSH_HOME
+  assert.equal(resolveStatePath({ stateFile: 'custom-state.json' }), path.join('/tmp/dsh-home', 'custom-state.json'))
   assert.equal(resolveStatePath({}), path.join('/tmp/dsh-home', 'plugin-notify-state.json'))
   assert.equal(resolveStatePath(), path.join('/tmp/dsh-home', 'plugin-notify-state.json'))
 

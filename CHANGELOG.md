@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-10-15
+
+### Fixed
+- **Host event cleanup** (#59): Prune dead listener on non-existent host event `settings/updated` in `lib/index.js` (active settings updates remain reliably monitored via `settings/document-updated` and `loader/volatile-update`).
+- **Client slot registration** (#59): Remove dead registration of non-existent client seat `settings.plugin.item` in `lib/client.js` (official plugin list page seat `plugins.item` and row config seat `plugins.row.config` handle settings cards).
+- **Web push state path containment** (#59): Constrain custom `webPush.stateFile` paths by resolving relative paths against the DSH home directory instead of returning raw unconstrained strings.
+
 ## [0.4.2] - 2026-10-10
 
 ### Fixed
