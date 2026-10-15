@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-10-15
+
+### Fixed
+- **Client config form lookup** (#61): Query `ctx.configForms` strictly by canonical entry id `plugin-notify` (`ROW_ID`) rather than attempting fallback queries to scoped package name `@goodandready/dsh-plugin-notify`, fixing unresolvable configuration lookups in the settings panel.
+
 ## [0.4.3] - 2026-10-15
 
 ### Fixed

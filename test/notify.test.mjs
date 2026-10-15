@@ -603,6 +603,43 @@ test('client does not register settings.section or dead settings.plugin.item slo
   assert.ok(rowConfigSlot, 'plugins.row.config fallback seat must be registered')
 })
 
+test('client queries configForms strictly by canonical entry id plugin-notify and never by package name', () => {
+  const queriedKeys = []
+  const client = loadClient()
+  const ctx = {
+    locale: {
+      bind: () => (k) => k,
+      register: () => () => {},
+    },
+    effect: (cb) => cb && cb(),
+    slots: {
+      inject(name, cb) {
+        cb()
+        return true
+      },
+      register() {},
+    },
+    configForms: {
+      get(id) {
+        queriedKeys.push(id)
+        return {
+          subscribe: () => () => {},
+          getSnapshot: () => ({ status: 'ready', value: {} }),
+        }
+      },
+    },
+  }
+  client.apply(ctx)
+  assert.deepEqual(queriedKeys, ['plugin-notify'], 'configForms must only be queried with canonical entry id plugin-notify')
+  assert.equal(queriedKeys.includes('@goodandready/dsh-plugin-notify'), false, 'configForms must not query package name')
+
+  // Source-level checks: ensure no fallback to NS exists
+  const source = fs.readFileSync(clientPath, 'utf8')
+  assert.ok(!source.includes('configForms.get(NS)'), 'client must not query configForms by NS')
+  assert.ok(!source.includes("configForms.get('@goodandready/dsh-plugin-notify')"), 'client must not query configForms by package name')
+  assert.ok(source.includes('configForms.get(ROW_ID)'), 'client must query configForms by ROW_ID')
+})
+
 test('deliveries and warnings are routed through ctx.logger without console calls (issue #22 fix)', async () => {
   const ctx = context()
   const original = globalThis.fetch
