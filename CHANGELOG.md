@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-10-19
+
+### Fixed
+- **Detached Logger Binding** (#62, GitHub #3): Guard logger method invocations with `safeLog(ctx, message)` binding receiver `this` (`fn.call(logger, message)`) to prevent `TypeError: this is not a function` in Cordis 0.2 `LoggerService`.
+- **Object Settings Persistence** (#62, GitHub #3): Decompose non-leaf object configuration fields (`webhooks`, `dnd`, `webPush`) into individual leaf paths (`['webhooks', key]`) and save atomically via `scope.mutate(ops)` with fallback to `scope.set`, passing `dsh-settings` volatile path validation.
+- **Session Events & Title Cascade** (#62, GitHub #3): Add `eventsOf(session)` supporting append-only `session.log`, `session.eventsSnapshot`, and `session.snapshotEvents()`; add `cachedTitle(session)` reading projected title cache from disk (`storages/session_projcache/sessions/<id>.json`), preventing fallback to raw UUIDs.
+- **Session Navigation Priority** (#62, GitHub #3): Target `uiWorkspace.openSession(sessionId)` as the primary navigation service in `navigateToSession` with graceful fallbacks.
+
 ## [0.4.4] - 2026-10-15
 
 ### Fixed

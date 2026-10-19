@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf, isTrustedRequest, getRequestRejection } from '../lib/index.js'
+import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf, isTrustedRequest, getRequestRejection, safeLog, eventsOf, cachedTitle } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -1144,4 +1144,132 @@ test("cleanupTurnStarts enforces maxSize bound and evicts oldest entries under b
   assert.equal(turnStarts.has("auto-burst-149"), true)
 
   turnStarts.clear()
+})
+
+test('safeLog binds receiver this and protects against detached logger calls (Bug 1 fix)', () => {
+  const calls = []
+  const strictLogger = {
+    tag: 'cordis-logger',
+    debug(msg) {
+      if (this !== strictLogger) throw new TypeError('this is not a function or lost receiver')
+      calls.push(`debug:${msg}`)
+    },
+    info(msg) {
+      if (this !== strictLogger) throw new TypeError('this is not a function or lost receiver')
+      calls.push(`info:${msg}`)
+    },
+  }
+  const ctx = { logger: strictLogger }
+  assert.doesNotThrow(() => safeLog(ctx, 'hello world'))
+  assert.deepEqual(calls, ['debug:hello world'])
+
+  const infoOnlyLogger = {
+    tag: 'info-only',
+    info(msg) {
+      if (this !== infoOnlyLogger) throw new TypeError('lost receiver')
+      calls.push(`info:${msg}`)
+    },
+  }
+  assert.doesNotThrow(() => safeLog({ logger: infoOnlyLogger }, 'fallback info'))
+  assert.equal(calls[1], 'info:fallback info')
+
+  assert.doesNotThrow(() => safeLog(null, 'silent'))
+  assert.doesNotThrow(() => safeLog({}, 'silent'))
+  assert.doesNotThrow(() => safeLog({ logger: { debug() { throw new Error('boom') } } }, 'silent'))
+})
+
+test('webhooks deliver when logger methods require this receiver (Bug 1 fix)', async () => {
+  const posts = []
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, opts) => {
+    posts.push({ url: String(url), body: JSON.parse(opts.body) })
+    return new Response('ok', { status: 200 })
+  }
+  try {
+    const strictLogger = {
+      debug(msg) {
+        if (!this || this !== strictLogger) throw new TypeError('this is not a function')
+      },
+      warn(msg) {},
+      info(msg) {
+        if (!this || this !== strictLogger) throw new TypeError('this is not a function')
+      },
+    }
+    const ctx = context({ logger: strictLogger })
+    apply(ctx, {
+      local: false,
+      events: ['task_done'],
+      webhooks: {
+        custom: 'https://example.test/strict-logger',
+      },
+    })
+    const s = session('strict-logger-sess')
+    ctx.emit(s, { type: 'turn/start' })
+    ctx.emit(s, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+    await waitFor(() => posts.length >= 1)
+    assert.equal(posts[0].body.kind, 'task_done')
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('eventsOf extracts events from log, eventsSnapshot, snapshotEvents(), and legacy events (Bug 3 fix)', () => {
+  const ev1 = { type: 'user/message', data: { content: 'hello' } }
+  assert.deepEqual(eventsOf({ log: [ev1] }), [ev1])
+  assert.deepEqual(eventsOf({ eventsSnapshot: [ev1] }), [ev1])
+  assert.deepEqual(eventsOf({ snapshotEvents: () => [ev1] }), [ev1])
+  assert.deepEqual(eventsOf({ events: [ev1] }), [ev1])
+  assert.deepEqual(eventsOf({ history: { entries: [ev1] } }), [ev1])
+  assert.deepEqual(eventsOf(null), [])
+  assert.deepEqual(eventsOf({}), [])
+})
+
+test('sessionTitle resolves from title, header, rows, session/title event, user message, or cached file (Bug 3 fix)', () => {
+  assert.equal(sessionTitle({ title: 'Direct Title' }), 'Direct Title')
+  assert.equal(sessionTitle({ header: { title: 'Header Title' } }), 'Header Title')
+  assert.equal(sessionTitle({ header: { title: { val: 'Header Val Title' } } }), 'Header Val Title')
+  assert.equal(sessionTitle({ rows: { title: 'Rows Title' } }), 'Rows Title')
+  assert.equal(sessionTitle({ rows: { title: { val: 'Rows Val Title' } } }), 'Rows Val Title')
+
+  const titleEvSession = {
+    log: [
+      { type: 'session/title', data: { title: 'Event Title' } },
+      { type: 'user/message', data: { content: 'Ignored User Message' } },
+    ]
+  }
+  assert.equal(sessionTitle(titleEvSession), 'Event Title')
+
+  const userMsgSession = {
+    log: [
+      { type: 'user/message', data: { content: 'First prompt from user' } },
+    ]
+  }
+  assert.equal(sessionTitle(userMsgSession), 'First prompt from user')
+
+  assert.equal(sessionTitle({ id: 'custom-session-uuid-123' }), 'custom-session-uuid-123')
+})
+
+test('summarizeTurn extracts turn summary from modern session.log (Bug 3 fix)', () => {
+  const modernSession = {
+    log: [
+      { type: 'user/message', data: { turn: 1, content: 'User says do it' } },
+      { type: 'tool/call', data: { turn: 1 } },
+      { type: 'assistant/message', data: { turn: 1, message: { content: 'Assistant finished task successfully' } } },
+    ]
+  }
+  const summary = summarizeTurn(modernSession, 1)
+  assert.ok(summary.includes('Assistant finished task successfully'))
+  assert.ok(summary.includes('called 1 tools'))
+})
+
+test('client settings card persists object-valued settings via scope.mutate with leaf paths (Bug 2 fix)', () => {
+  const source = fs.readFileSync(clientPath, 'utf8')
+  assert.ok(source.includes('scope.mutate'), 'client must call scope.mutate for atomic save')
+  assert.ok(source.includes("path: [k, subKey]"), "client must produce leaf path operations for nested objects")
+})
+
+test('navigateToSession targets uiWorkspace.openSession with fallbacks (Bug 4 fix)', () => {
+  const source = fs.readFileSync(clientPath, 'utf8')
+  assert.ok(source.includes('uiWorkspace'), 'navigateToSession must support uiWorkspace')
+  assert.ok(source.includes('openSession'), 'navigateToSession must call openSession on uiWorkspace')
 })
