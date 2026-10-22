@@ -112,7 +112,7 @@ test('getVapidKeys env override wins over the state file', async (t) => {
   assert.equal(fs.existsSync(file), false)
 })
 
-function validSub(endpoint = 'https://push.example/abc') {
+function validSub(endpoint = 'https://fcm.googleapis.com/fcm/send/abc') {
   return { endpoint, keys: { p256dh: 'p256dh-key', auth: 'auth-key' } }
 }
 
@@ -121,15 +121,15 @@ test('addSubscription validates and dedupes by endpoint', async (t) => {
   const file = path.join(dir, 'state.json')
 
   await assert.rejects(() => addSubscription(file, { endpoint: 'http://insecure/abc', keys: { p256dh: 'a', auth: 'b' } }))
-  await assert.rejects(() => addSubscription(file, { endpoint: 'https://push.example/abc', keys: {} }))
+  await assert.rejects(() => addSubscription(file, { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys: {} }))
 
   assert.equal(await addSubscription(file, validSub()), 1)
   assert.equal(await addSubscription(file, validSub()), 1)
-  assert.equal(await addSubscription(file, validSub('https://push.example/second')), 2)
+  assert.equal(await addSubscription(file, validSub('https://updates.push.services.mozilla.com/wpush/v2/second')), 2)
 
   const subs = await listSubscriptions(file)
   assert.equal(subs.length, 2)
-  assert.equal(subs[0].endpoint, 'https://push.example/abc')
+  assert.equal(subs[0].endpoint, 'https://fcm.googleapis.com/fcm/send/abc')
 })
 
 test('removeSubscription removes and reports', async (t) => {
@@ -137,8 +137,8 @@ test('removeSubscription removes and reports', async (t) => {
   const file = path.join(dir, 'state.json')
   await addSubscription(file, validSub())
 
-  assert.equal(await removeSubscription(file, 'https://push.example/abc'), 1)
-  assert.equal(await removeSubscription(file, 'https://push.example/abc'), 0)
+  assert.equal(await removeSubscription(file, 'https://fcm.googleapis.com/fcm/send/abc'), 1)
+  assert.equal(await removeSubscription(file, 'https://fcm.googleapis.com/fcm/send/abc'), 0)
   assert.deepEqual(await listSubscriptions(file), [])
 })
 
@@ -146,8 +146,64 @@ test('concurrent saveState calls serialize into a valid file', async (t) => {
   const dir = tempDir(t)
   const file = path.join(dir, 'state.json')
   await Promise.all(
-    Array.from({ length: 12 }, (_, i) => saveState(file, { vapid: null, subscriptions: [{ endpoint: `https://push.example/${i}`, keys: { p256dh: 'x', auth: 'y' }, addedAt: i }] })),
+    Array.from({ length: 12 }, (_, i) => saveState(file, { vapid: null, subscriptions: [{ endpoint: `https://fcm.googleapis.com/fcm/send/${i}`, keys: { p256dh: 'x', auth: 'y' }, addedAt: i }] })),
   )
   const subs = await listSubscriptions(file)
   assert.equal(subs.length, 1)
+})
+
+test('addSubscription strictly rejects SSRF, loopback, private IPs, userinfo, and unapproved hosts', async (t) => {
+  const dir = tempDir(t)
+  const file = path.join(dir, 'state.json')
+
+  // Loopback and internal IPs
+  await assert.rejects(() => addSubscription(file, validSub('https://127.0.0.1/push')), /allowed push service/)
+  await assert.rejects(() => addSubscription(file, validSub('https://localhost/push')), /allowed push service/)
+  await assert.rejects(() => addSubscription(file, validSub('https://10.0.0.1/push')), /allowed push service/)
+  await assert.rejects(() => addSubscription(file, validSub('https://192.168.1.1/push')), /allowed push service/)
+  await assert.rejects(() => addSubscription(file, validSub('https://169.254.169.254/latest')), /allowed push service/)
+  await assert.rejects(() => addSubscription(file, validSub('https://[::1]/push')), /allowed push service/)
+
+  // Attacker / exfil domains
+  await assert.rejects(() => addSubscription(file, validSub('https://attacker.example/exfil')), /allowed push service/)
+  await assert.rejects(() => addSubscription(file, validSub('https://evil.com/fcm.googleapis.com')), /allowed push service/)
+
+  // Credentials / userinfo in URL
+  await assert.rejects(() => addSubscription(file, validSub('https://user:pass@fcm.googleapis.com/push')), /allowed push service/)
+
+  // Non-standard port
+  await assert.rejects(() => addSubscription(file, validSub('https://fcm.googleapis.com:8443/push')), /allowed push service/)
+
+  // Insecure scheme
+  await assert.rejects(() => addSubscription(file, validSub('http://fcm.googleapis.com/push')), /allowed push service/)
+
+  // Legitimate providers accepted
+  assert.equal(await addSubscription(file, validSub('https://fcm.googleapis.com/fcm/send/1')), 1)
+  assert.equal(await addSubscription(file, validSub('https://updates.push.services.mozilla.com/wpush/v2/1')), 2)
+  assert.equal(await addSubscription(file, validSub('https://web.push.apple.com/QC8')), 3)
+  assert.equal(await addSubscription(file, validSub('https://db5p.notify.windows.com/w/?token=1')), 4)
+
+  // Custom allowedHosts honored
+  await assert.rejects(() => addSubscription(file, validSub('https://custom.corp.push/endpoint')), /allowed push service/)
+  assert.equal(await addSubscription(file, validSub('https://custom.corp.push/endpoint'), ['custom.corp.push']), 5)
+  assert.equal(await addSubscription(file, validSub('https://sub.mycorp.push/endpoint'), ['*.mycorp.push']), 6)
+})
+
+test('addSubscription enforces subscription capacity bound (max 100)', async (t) => {
+  const dir = tempDir(t)
+  const file = path.join(dir, 'state.json')
+
+  // Set tight limit of 3 for testing bound
+  assert.equal(await addSubscription(file, validSub('https://fcm.googleapis.com/fcm/send/1'), [], 3), 1)
+  assert.equal(await addSubscription(file, validSub('https://fcm.googleapis.com/fcm/send/2'), [], 3), 2)
+  assert.equal(await addSubscription(file, validSub('https://fcm.googleapis.com/fcm/send/3'), [], 3), 3)
+
+  // Existing endpoint can still be updated
+  assert.equal(await addSubscription(file, validSub('https://fcm.googleapis.com/fcm/send/2'), [], 3), 3)
+
+  // 4th distinct endpoint rejected with limit error
+  await assert.rejects(
+    () => addSubscription(file, validSub('https://fcm.googleapis.com/fcm/send/4'), [], 3),
+    /limit reached/
+  )
 })

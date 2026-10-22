@@ -151,6 +151,7 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 | `webPush.onlyWhenAway` | boolean | `true` | Skip web push while a browser client is connected to the SSE stream. |
 | `webPush.subject` | string | `mailto:notify@localhost` | VAPID subject (mailto:/https: contact) advertised to push services. |
 | `webPush.stateFile` | string | empty | State file for VAPID keys and subscriptions (default `$DSH_HOME/plugin-notify-state.json`). |
+| `webPush.allowedHosts` | string[] | `[]` | Optional list of extra allowed push endpoint hostnames or wildcards (default allowlist covers Google FCM, Mozilla, Apple, Microsoft). |
 | `webhooks.*` | string | empty | Credential **name** whose value is the webhook URL. Empty disables the channel. |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | Event whitelist. Empty restores the default three. |
 | `local` | boolean | `true` | macOS `osascript` popup; ignored on other platforms. |

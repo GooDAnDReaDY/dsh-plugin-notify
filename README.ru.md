@@ -159,6 +159,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
 | `webPush.onlyWhenAway` | boolean | `true` | Пропускать web push, пока подключён браузерный клиент. |
 | `webPush.subject` | string | `mailto:notify@localhost` | VAPID-контакт (mailto:/https:), передаваемый push-сервисам. |
 | `webPush.stateFile` | string | пусто | Файл состояния для VAPID-ключей и подписок (по умолчанию `$DSH_HOME/plugin-notify-state.json`). |
+| `webPush.allowedHosts` | string[] | `[]` | Дополнительные доверенные хосты/маски push-эндпоинтов (по умолчанию строго разрешены Google FCM, Mozilla, Apple, Microsoft). |
 
 Сырой `http(s)://` в `webhooks.*` всё ещё отправляется с предупреждением. Перенесите URL в Credentials.
 

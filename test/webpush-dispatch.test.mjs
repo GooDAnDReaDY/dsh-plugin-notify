@@ -8,6 +8,7 @@ import {
   settleWebPushDeliveries,
   addSubscription,
   listSubscriptions,
+  saveState,
   setWebPushLibrary,
   sseClients,
 } from '../lib/index.js'
@@ -67,7 +68,7 @@ test.afterEach(() => {
   sseClients.clear()
 })
 
-const SUB = { endpoint: 'https://push.example/dev', keys: { p256dh: 'p', auth: 'a' } }
+const SUB = { endpoint: 'https://updates.push.services.mozilla.com/wpush/v2/dev', keys: { p256dh: 'p', auth: 'a' } }
 
 test('web push delivers approval requests to stored subscriptions', async (t) => {
   const dir = tempDir(t)
@@ -88,7 +89,7 @@ test('web push delivers approval requests to stored subscriptions', async (t) =>
 
   assert.ok(await until(() => sends.length > 0), 'push should be sent')
   assert.equal(sends.length, 1)
-  assert.equal(sends[0].sub.endpoint, 'https://push.example/dev')
+  assert.equal(sends[0].sub.endpoint, 'https://updates.push.services.mozilla.com/wpush/v2/dev')
   const payload = JSON.parse(sends[0].payload)
   assert.equal(payload.kind, 'approval_requested')
   assert.equal(payload.sessionId, 'sess-1')
@@ -239,9 +240,9 @@ test('dead subscriptions (404/410) are pruned, live failures are not', async (t)
   const dir = tempDir(t)
   const stateFile = path.join(dir, 'state.json')
   await addSubscription(stateFile, SUB)
-  await addSubscription(stateFile, { endpoint: 'https://push.example/gone', keys: { p256dh: 'p', auth: 'a' } })
+  await addSubscription(stateFile, { endpoint: 'https://updates.push.services.mozilla.com/wpush/v2/gone', keys: { p256dh: 'p', auth: 'a' } })
 
-  const errors = { 'https://push.example/gone': Object.assign(new Error('gone'), { statusCode: 410 }) }
+  const errors = { 'https://updates.push.services.mozilla.com/wpush/v2/gone': Object.assign(new Error('gone'), { statusCode: 410 }) }
   setWebPushLibrary({
     sendNotification: async (sub) => {
       if (errors[sub.endpoint]) throw errors[sub.endpoint]
@@ -260,7 +261,7 @@ test('dead subscriptions (404/410) are pruned, live failures are not', async (t)
   assert.ok(await until(() => listSubscriptions(stateFile).then((s) => s.length === 1)))
   await settleWebPushDeliveries()
   const remaining = await listSubscriptions(stateFile)
-  assert.equal(remaining[0].endpoint, 'https://push.example/dev')
+  assert.equal(remaining[0].endpoint, 'https://updates.push.services.mozilla.com/wpush/v2/dev')
 })
 
 test('no subscriptions means no sends and no errors', async (t) => {
@@ -278,4 +279,38 @@ test('no subscriptions means no sends and no errors', async (t) => {
   })
   await settleWebPushDeliveries()
   assert.equal(sends.length, 0)
+})
+
+test('deliverWebPush ignores and prunes disallowed endpoints without sending', async (t) => {
+  const dir = tempDir(t)
+  const stateFile = path.join(dir, 'state.json')
+
+  // Seed state file directly with an attacker SSRF endpoint and a legitimate endpoint
+  await saveState(stateFile, {
+    vapid: null,
+    subscriptions: [
+      { endpoint: 'https://attacker.example/exfil', keys: { p256dh: 'a', auth: 'b' } },
+      { endpoint: 'https://127.0.0.1:443/internal', keys: { p256dh: 'a', auth: 'b' } },
+      { endpoint: 'https://updates.push.services.mozilla.com/wpush/v2/legit', keys: { p256dh: 'p', auth: 'a' } },
+    ],
+  })
+
+  const sends = []
+  setWebPushLibrary({ sendNotification: async (sub, payload, opts) => { sends.push(sub.endpoint) } })
+  t.after(() => setWebPushLibrary(null))
+
+  const ctx = fakeCtx()
+  apply(ctx, { webPush: { enabled: true, onlyWhenAway: true, stateFile } })
+
+  ctx.handlers['session/event'](sessionFixture(), {
+    type: 'approval/asked',
+    data: { toolName: 'bash', reason: 'runs safe command' },
+  })
+
+  assert.ok(await until(() => sends.length > 0), 'push should be sent to legitimate endpoint')
+  assert.deepEqual(sends, ['https://updates.push.services.mozilla.com/wpush/v2/legit'])
+
+  const remaining = await listSubscriptions(stateFile)
+  assert.equal(remaining.length, 1)
+  assert.equal(remaining[0].endpoint, 'https://updates.push.services.mozilla.com/wpush/v2/legit')
 })

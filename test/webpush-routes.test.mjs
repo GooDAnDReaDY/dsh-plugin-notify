@@ -144,13 +144,13 @@ test('push/subscribe: persists valid subscriptions, rejects invalid bodies', asy
   const stateFile = path.join(dir, 'state.json')
 
   const res = fakeRes()
-  await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://push.example/a', keys: { p256dh: 'p', auth: 'a' } }) }), res, ctx, () => cfg)
+  await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/a', keys: { p256dh: 'p', auth: 'a' } }) }), res, ctx, () => cfg)
   assert.equal(res.statusCode, 200)
   assert.deepEqual(JSON.parse(res.body), { ok: true, count: 1 })
 
   // Same endpoint again → dedupe, count stays 1.
   const res2 = fakeRes()
-  await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://push.example/a', keys: { p256dh: 'p2', auth: 'a2' } }) }), res2, ctx, () => cfg)
+  await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/a', keys: { p256dh: 'p2', auth: 'a2' } }) }), res2, ctx, () => cfg)
   assert.equal(JSON.parse(res2.body).count, 1)
   const subs = await listSubscriptions(stateFile)
   assert.equal(subs[0].keys.p256dh, 'p2')
@@ -159,6 +159,26 @@ test('push/subscribe: persists valid subscriptions, rejects invalid bodies', asy
   const res3 = fakeRes()
   await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'http://insecure/a', keys: { p256dh: 'p', auth: 'a' } }) }), res3, ctx, () => cfg)
   assert.equal(res3.statusCode, 400)
+
+  // SSRF attempts → 400.
+  for (const badEndpoint of [
+    'https://attacker.example/exfil',
+    'https://127.0.0.1/push',
+    'https://10.0.0.1/push',
+    'https://localhost/push',
+    'https://user:pass@fcm.googleapis.com/push',
+    'https://fcm.googleapis.com:8443/push',
+  ]) {
+    const resBad = fakeRes()
+    await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: badEndpoint, keys: { p256dh: 'p', auth: 'a' } }) }), resBad, ctx, () => cfg)
+    assert.equal(resBad.statusCode, 400, `endpoint ${badEndpoint} should be rejected with 400`)
+  }
+
+  // Custom allowedHosts honored
+  const customCfg = { ...cfg, webPush: { ...cfg.webPush, allowedHosts: ['custom.push.service'] } }
+  const resCustom = fakeRes()
+  await handlePushSubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://custom.push.service/a', keys: { p256dh: 'p', auth: 'a' } }) }), resCustom, ctx, () => customCfg)
+  assert.equal(resCustom.statusCode, 200)
 
   // Non-JSON body → 400.
   const res4 = fakeRes()
@@ -176,14 +196,14 @@ test('push/unsubscribe: removes by endpoint', async (t) => {
   const ctx = { logger: { info() {}, warn() {} } }
   const cfg = enabledConfig(dir)
   const stateFile = path.join(dir, 'state.json')
-  await addSubscription(stateFile, { endpoint: 'https://push.example/a', keys: { p256dh: 'p', auth: 'a' } })
+  await addSubscription(stateFile, { endpoint: 'https://fcm.googleapis.com/fcm/send/a', keys: { p256dh: 'p', auth: 'a' } })
 
   const missing = fakeRes()
   await handlePushUnsubscribe(fakeReq('POST', { rawBody: '{}' }), missing, ctx, () => cfg)
   assert.equal(missing.statusCode, 400)
 
   const res = fakeRes()
-  await handlePushUnsubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://push.example/a' }) }), res, ctx, () => cfg)
+  await handlePushUnsubscribe(fakeReq('POST', { rawBody: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/a' }) }), res, ctx, () => cfg)
   assert.equal(res.statusCode, 200)
   assert.deepEqual(JSON.parse(res.body), { ok: true, removed: 1 })
   assert.deepEqual(await listSubscriptions(stateFile), [])
@@ -194,7 +214,7 @@ test('push/test: sends to stored subscriptions via the injected library', async 
   const ctx = { logger: { info() {}, warn() {} } }
   const cfg = enabledConfig(dir)
   const stateFile = path.join(dir, 'state.json')
-  await addSubscription(stateFile, { endpoint: 'https://push.example/a', keys: { p256dh: 'p', auth: 'a' } })
+  await addSubscription(stateFile, { endpoint: 'https://fcm.googleapis.com/fcm/send/a', keys: { p256dh: 'p', auth: 'a' } })
 
   const sends = []
   setWebPushLibrary({ sendNotification: async (sub, payload, opts) => { sends.push({ sub, payload, opts }) } })

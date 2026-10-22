@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-10-22
+
+### Security
+- **Web Push Endpoint Allowlist & SSRF Protection** (#64): Enforce strict validation of subscription endpoints against canonical Web Push gateways (Google FCM, Mozilla Autopush, Apple Web Push, Microsoft WNS) with optional `webPush.allowedHosts`; reject loopback, private IPv4/IPv6, link-local, userinfo, and non-standard ports.
+- **Push Endpoint Masking in Logs** (#64): Mask subscription endpoint tokens in server logs (`maskEndpoint`) and delivery error messages to prevent token exfiltration.
+- **Subscription Capacity Bound** (#64): Constrain total stored subscriptions (max 100) to prevent state file exhaustion DoS.
+- **Dead & Disallowed Endpoint Pruning** (#64): Prune any invalid or unapproved endpoints during `deliverWebPush` without dispatching requests.
+
 ## [0.4.5] - 2026-10-19
 
 ### Fixed

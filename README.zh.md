@@ -158,6 +158,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
 | `webPush.onlyWhenAway` | boolean | `true` | 有浏览器客户端连接时跳过网页推送。 |
 | `webPush.subject` | string | `mailto:notify@localhost` | 向推送服务公示的 VAPID 联系方式（mailto:/https:）。 |
 | `webPush.stateFile` | string | 空 | VAPID 密钥与订阅的状态文件（默认 `$DSH_HOME/plugin-notify-state.json`）。 |
+| `webPush.allowedHosts` | string[] | `[]` | 额外允许的推送端点域名或通配符列表（默认严格仅允许 Google FCM、Mozilla、Apple、Microsoft）。 |
 
 `webhooks.*` 中残留的原始 `http(s)://` 仍会发送，但会给出弃用警告。请迁移到凭据。
 
