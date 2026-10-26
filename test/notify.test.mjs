@@ -5,7 +5,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf, isTrustedRequest, getRequestRejection, safeLog, eventsOf, cachedTitle } from '../lib/index.js'
+import { apply, Config, plainConfig, name, NS, ENTRY_ID, resolveWebhookValue, broadcastSse, cleanupTurnStarts, turnStarts, sendSseHeartbeat, sseClients, closeAllSseClients, sessionTitle, summarizeTurn, textOf, isTrustedRequest, getRequestRejection, safeLog, eventsOf, cachedTitle, isSubagentSession } from '../lib/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const clientPath = path.join(root, 'lib/client.js')
@@ -1272,4 +1272,94 @@ test('navigateToSession targets uiWorkspace.openSession with fallbacks (Bug 4 fi
   const source = fs.readFileSync(clientPath, 'utf8')
   assert.ok(source.includes('uiWorkspace'), 'navigateToSession must support uiWorkspace')
   assert.ok(source.includes('openSession'), 'navigateToSession must call openSession on uiWorkspace')
+})
+
+test('isSubagentSession accurately identifies delegated and subagent sessions', () => {
+  // Bare UUIDs (typical for delegated subagent runs like dsh-mnemon)
+  assert.equal(isSubagentSession({ id: '8507824f-26e2-440c-9a15-4fe2cb1f5726' }), true)
+  assert.equal(isSubagentSession({ id: 'e1402ea0-3be6-473d-a8a4-025efafecc82' }), true)
+
+  // Main interactive sessions in DSH have session- prefix
+  assert.equal(isSubagentSession({ id: 'session-e1402ea0-3be6-473d-a8a4-025efafecc82' }), false)
+  assert.equal(isSubagentSession({ id: 'session-main-123' }), false)
+
+  // Explicit metadata markers
+  assert.equal(isSubagentSession({ id: 'session-custom', header: { origin: 'subagent' } }), true)
+  assert.equal(isSubagentSession({ id: 'session-custom', header: { parentSession: 'session-parent' } }), true)
+  assert.equal(isSubagentSession({ id: 'session-custom', header: { parentId: 'session-parent' } }), true)
+  assert.equal(isSubagentSession({ id: 'session-custom', parentId: 'session-parent' }), true)
+  assert.equal(isSubagentSession({ id: 'session-custom', origin: 'subagent' }), true)
+
+  // Subagent prefix conventions
+  assert.equal(isSubagentSession({ id: 'subagent-inspect-catalog' }), true)
+  assert.equal(isSubagentSession({ id: 'sub-worker-42' }), true)
+  assert.equal(isSubagentSession({ id: 'delegate-reviewer' }), true)
+
+  // Regular non-subagent named sessions
+  assert.equal(isSubagentSession({ id: 'smoke-session' }), false)
+  assert.equal(isSubagentSession({ id: 'task-test' }), false)
+})
+
+test('subagent sessions are suppressed by default (notifySubagents: false)', async () => {
+  const posts = []
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', () => {
+      posts.push(JSON.parse(body))
+      res.end('ok')
+    })
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${server.address().port}`
+
+  const ctx = context()
+  apply(ctx, { webhooks: { custom: url }, local: false, events: ['task_done', 'approval_requested'] })
+
+  // 1. Delegated subagent session (bare uuid) -> should NOT dispatch
+  const subagent = { id: '8507824f-26e2-440c-9a15-4fe2cb1f5726', title: 'Delegated subagent task' }
+  ctx.emit(subagent, { type: 'turn/start' })
+  ctx.emit(subagent, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+  ctx.emit(subagent, { type: 'approval/asked', data: { toolName: 'bash' } })
+
+  // Give short window to verify no webhook was fired
+  await new Promise((r) => setTimeout(r, 60))
+  assert.equal(posts.length, 0, 'subagent session should not post when notifySubagents is false')
+
+  // 2. Main interactive session -> SHOULD dispatch
+  const main = { id: 'session-e1402ea0-3be6-473d-a8a4-025efafecc82', title: 'Main user conversation' }
+  ctx.emit(main, { type: 'turn/start' })
+  ctx.emit(main, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+
+  await waitFor(() => posts.length > 0)
+  server.close()
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0].sessionId, 'session-e1402ea0-3be6-473d-a8a4-025efafecc82')
+  assert.equal(posts[0].kind, 'task_done')
+})
+
+test('subagent sessions notify when notifySubagents: true is configured', async () => {
+  const posts = []
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', () => {
+      posts.push(JSON.parse(body))
+      res.end('ok')
+    })
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${server.address().port}`
+
+  const ctx = context()
+  apply(ctx, { webhooks: { custom: url }, local: false, notifySubagents: true, events: ['task_done'] })
+
+  const subagent = { id: '8507824f-26e2-440c-9a15-4fe2cb1f5726', title: 'Delegated subagent task' }
+  ctx.emit(subagent, { type: 'turn/start' })
+  ctx.emit(subagent, { type: 'turn/end', data: { reason: { kind: 'completed' }, turn: 1 } })
+
+  await waitFor(() => posts.length > 0)
+  server.close()
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0].sessionId, '8507824f-26e2-440c-9a15-4fe2cb1f5726')
 })

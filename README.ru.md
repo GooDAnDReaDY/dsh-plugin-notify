@@ -118,6 +118,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
     enableToasts: false
     enableDesktopNotifications: false
     notifyBackgroundOnly: false
+    notifySubagents: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
       wecom: NOTIFY_WECOM_WEBHOOK
@@ -147,6 +148,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
 | `enableToasts` | boolean | `false` | Экранные всплывающие тосты поверх всех сессий с кнопкой перехода (opt-in). |
 | `enableDesktopNotifications` | boolean | `false` | Системные десктопные уведомления ОС через Notification API (opt-in). |
 | `notifyBackgroundOnly` | boolean | `false` | Уведомлять только если событие произошло в неактивной фоновой сессии. |
+| `notifySubagents` | boolean | `false` | Уведомлять о завершении задач во вспомогательных субагентах (по умолчанию false для подавления фонового шума). |
 | `webhooks.*` | string | пусто | **Имя** credential, значение которого — URL вебхука. Пусто отключает канал. |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | Белый список событий. Пусто возвращает три значения по умолчанию. |
 | `local` | boolean | `true` | macOS `osascript`; на других ОС игнорируется. |

@@ -118,6 +118,7 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
     enableToasts: false
     enableDesktopNotifications: false
     notifyBackgroundOnly: false
+    notifySubagents: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
       wecom: NOTIFY_WECOM_WEBHOOK
@@ -147,6 +148,7 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 | `enableToasts` | boolean | `false` | Show cross-session on-screen banner toasts with interactive session switching (opt-in). |
 | `enableDesktopNotifications` | boolean | `false` | Show native OS push notifications via HTML5 Notification API (opt-in). |
 | `notifyBackgroundOnly` | boolean | `false` | Only trigger audio, toasts, and push when event is from an inactive/background session. |
+| `notifySubagents` | boolean | `false` | Send notifications for delegated subagent turns (default false to suppress subagent noise). |
 | `webPush.enabled` | boolean | `false` | Web Push (PWA) channel: background push that reaches devices with every dsh tab closed (opt-in). |
 | `webPush.onlyWhenAway` | boolean | `true` | Skip web push while a browser client is connected to the SSE stream. |
 | `webPush.subject` | string | `mailto:notify@localhost` | VAPID subject (mailto:/https: contact) advertised to push services. |

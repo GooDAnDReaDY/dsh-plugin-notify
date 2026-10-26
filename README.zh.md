@@ -117,6 +117,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
     enableToasts: false
     enableDesktopNotifications: false
     notifyBackgroundOnly: false
+    notifySubagents: false
     webhooks:
       feishu: NOTIFY_FEISHU_WEBHOOK
       wecom: NOTIFY_WECOM_WEBHOOK
@@ -146,6 +147,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
 | `enableToasts` | boolean | `false` | 跨会话弹出屏幕横幅通知，附带一键跳转按钮（默认关闭，需显式开启）。 |
 | `enableDesktopNotifications` | boolean | `false` | 系统原生桌面推送（Windows、macOS、Linux、DSH 桌面版，需显式开启并授权）。 |
 | `notifyBackgroundOnly` | boolean | `false` | 仅当事件发生在非活跃/后台会话时才触发通知。 |
+| `notifySubagents` | boolean | `false` | 是否发送委托子代理（subagent）回合通知（默认为 false 以抑制子代理噪音）。 |
 | `webhooks.*` | string | 空 | 值为 Webhook URL 的凭据**名称**。空则关闭该通道。 |
 | `events` | string[] | `task_done`, `error`, `approval_requested` | 事件白名单。空则恢复默认三项。 |
 | `local` | boolean | `true` | macOS `osascript` 弹窗；其他平台忽略。 |

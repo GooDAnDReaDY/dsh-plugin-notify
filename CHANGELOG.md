@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-10-26
+
+### Added
+- **Subagent Session Filtering & Noise Suppression** (#66, GitHub #4): Added `notifySubagents` option (boolean, default `false`) to Config schema and UI settings card. Suppresses completion (`turn/end`) and approval (`approval/asked`) notifications originating from delegated subagents (such as `dsh-mnemon` and background subagent tasks). Subagents are identified via explicit session metadata (`origin === 'subagent'`, `header.parentSession`, `header.parentId`, `isSubagent`, `agentType`) and bare UUID identifier format, while preserving notifications for main interactive user conversations (`session-<uuid>`).
+
 ## [0.4.6] - 2026-10-22
 
 ### Security
