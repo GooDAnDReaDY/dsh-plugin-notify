@@ -75,6 +75,7 @@ graph TD
 - `turn/end` с `reason.kind === 'completed'` → `task_done`.
 - любой другой `turn/end` → `error`.
 - `approval/asked` → `approval_requested`.
+- `user-questions/request` → `question_requested` (вопросы пользователю и ревью плана).
 - Трансляция событий в реальном времени через SSE (`GET /dsh-plugin-notify/events`) через сервис Cordis `webServer`.
 - Разрешение `webhooks.*`: устаревший сырой `http(s)://` (предупреждение) → Credentials `resolve` → `process.env[name]`.
 - POST с `AbortSignal.timeout(timeoutMs)` (по умолчанию 5000 мс). Ошибка POST только логируется, без ретрая и без блокировки цикла агента.
@@ -126,7 +127,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
       slack: NOTIFY_SLACK_WEBHOOK
       discord: NOTIFY_DISCORD_WEBHOOK
       custom: NOTIFY_CUSTOM_WEBHOOK
-    events: [task_done, error, approval_requested]
+    events: [task_done, error, approval_requested, question_requested]
     local: true
     timeoutMs: 5000
     dnd:
@@ -150,7 +151,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
 | `notifyBackgroundOnly` | boolean | `false` | Уведомлять только если событие произошло в неактивной фоновой сессии. |
 | `notifySubagents` | boolean | `false` | Уведомлять о завершении задач во вспомогательных субагентах (по умолчанию false для подавления фонового шума). |
 | `webhooks.*` | string | пусто | **Имя** credential, значение которого — URL вебхука. Пусто отключает канал. |
-| `events` | string[] | `task_done`, `error`, `approval_requested` | Белый список событий. Пусто возвращает три значения по умолчанию. |
+| `events` | string[] | `task_done`, `error`, `approval_requested`, `question_requested` | Белый список событий. Пусто восстанавливает значения по умолчанию. |
 | `local` | boolean | `true` | macOS `osascript`; на других ОС игнорируется. |
 | `timeoutMs` | number | `5000` | Таймаут одного запроса. |
 | `dnd.start` / `dnd.end` | string | пусто | Окно `HH:MM`. Равные или невалидные значения отключают DND. |

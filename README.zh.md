@@ -73,6 +73,7 @@ graph TD
 - `turn/end` 且 `reason.kind === 'completed'` → `task_done`。
 - 其他 `turn/end` 原因 → `error`。
 - `approval/asked` → `approval_requested`。
+- `user-questions/request` → `question_requested`（用户提问与计划审阅）。
 - 通过 Cordis `webServer` 服务向已连接的前端客户端提供实时 SSE 事件流（`GET /dsh-plugin-notify/events`）。
 - 解析 `webhooks.*`：遗留 `http(s)://` URL（弃用警告）→ Credentials `resolve` → `process.env[name]`。
 - 使用 `AbortSignal.timeout(timeoutMs)`（默认 5000 ms）。POST 失败只记录，不重试，不阻塞 agent 循环。
@@ -125,7 +126,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
       slack: NOTIFY_SLACK_WEBHOOK
       discord: NOTIFY_DISCORD_WEBHOOK
       custom: NOTIFY_CUSTOM_WEBHOOK
-    events: [task_done, error, approval_requested]
+    events: [task_done, error, approval_requested, question_requested]
     local: true
     timeoutMs: 5000
     dnd:
@@ -149,7 +150,7 @@ dsh plugin --profile web add @goodandready/dsh-plugin-notify
 | `notifyBackgroundOnly` | boolean | `false` | 仅当事件发生在非活跃/后台会话时才触发通知。 |
 | `notifySubagents` | boolean | `false` | 是否发送委托子代理（subagent）回合通知（默认为 false 以抑制子代理噪音）。 |
 | `webhooks.*` | string | 空 | 值为 Webhook URL 的凭据**名称**。空则关闭该通道。 |
-| `events` | string[] | `task_done`, `error`, `approval_requested` | 事件白名单。空则恢复默认三项。 |
+| `events` | string[] | `task_done`, `error`, `approval_requested`, `question_requested` | 事件白名单。空则恢复默认项。 |
 | `local` | boolean | `true` | macOS `osascript` 弹窗；其他平台忽略。 |
 | `timeoutMs` | number | `5000` | 单次请求中止超时。 |
 | `dnd.start` / `dnd.end` | string | 空 | `HH:MM` 窗口。相等或非法则关闭免打扰。 |

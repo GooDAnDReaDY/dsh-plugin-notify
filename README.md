@@ -73,6 +73,7 @@ graph TD
 - `turn/end` with `reason.kind === 'completed'` → `task_done`.
 - `turn/end` with any other reason → `error`.
 - `approval/asked` → `approval_requested`.
+- `user-questions/request` → `question_requested` (plan review and interactive questions).
 - Streams real-time notifications to connected clients via SSE (`GET /dsh-plugin-notify/events`) on the Cordis `webServer` service.
 - Resolves each `webhooks.*` value as: legacy `http(s)://` URL (deprecated warning) → Credentials `resolve(credentialRef(name))` → `process.env[name]`.
 - Posts with `AbortSignal.timeout(timeoutMs)` (default 5000 ms). Failed POSTs are logged and never retried, and they never block the agent loop.
@@ -126,7 +127,7 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
       slack: NOTIFY_SLACK_WEBHOOK
       discord: NOTIFY_DISCORD_WEBHOOK
       custom: NOTIFY_CUSTOM_WEBHOOK
-    events: [task_done, error, approval_requested]
+    events: [task_done, error, approval_requested, question_requested]
     local: true
     timeoutMs: 5000
     dnd:
@@ -155,7 +156,7 @@ Put each webhook URL into **Settings → Credentials**. In the plugin card, type
 | `webPush.stateFile` | string | empty | State file for VAPID keys and subscriptions (default `$DSH_HOME/plugin-notify-state.json`). |
 | `webPush.allowedHosts` | string[] | `[]` | Optional list of extra allowed push endpoint hostnames or wildcards (default allowlist covers Google FCM, Mozilla, Apple, Microsoft). |
 | `webhooks.*` | string | empty | Credential **name** whose value is the webhook URL. Empty disables the channel. |
-| `events` | string[] | `task_done`, `error`, `approval_requested` | Event whitelist. Empty restores the default three. |
+| `events` | string[] | `task_done`, `error`, `approval_requested`, `question_requested` | Event whitelist. Empty restores default events. |
 | `local` | boolean | `true` | macOS `osascript` popup; ignored on other platforms. |
 | `timeoutMs` | number | `5000` | Per-request abort timeout. |
 | `dnd.start` / `dnd.end` | string | empty | `HH:MM` window. Equal or invalid values disable DND. |

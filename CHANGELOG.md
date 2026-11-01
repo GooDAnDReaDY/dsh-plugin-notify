@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2026-11-01
+
+### Added
+- **Interactive Question and Plan Review Notifications** (#68, GitHub #5): Added `question_requested` event kind (in default events) listening to Cordis waterfall `user-questions/request` as a passive observer (`return next()`). Accurately discriminates plan-mode review cards (`exit_plan_mode`, `intent.kind === 'plan-review'`) with summary `'Plan ready for review'` and generic questions (`ask_user_question`) with question header/text. Dispatches to all configured channels (SSE, IM webhooks, Web Push, audio chimes, toasts, desktop push) with full subagent and prefix filtering support.
+
 ## [0.4.7] - 2026-10-26
 
 ### Added

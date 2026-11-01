@@ -35,6 +35,18 @@ function context(extra = {}) {
       const arr = listeners.get('session/event') || []
       for (const cb of [...arr]) cb(session, event)
     },
+    waterfall(topic, ...args) {
+      const arr = listeners.get(topic) || []
+      const next = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : () => {}
+      if (arr.length === 0) return next()
+      let idx = 0
+      const dispatch = () => {
+        if (idx >= arr.length) return next()
+        const fn = arr[idx++]
+        return fn(...args.slice(0, -1), dispatch)
+      }
+      return dispatch()
+    },
     effect(callback) {
       const dispose = callback()
       if (typeof dispose === 'function') disposers.push(dispose)
@@ -1362,4 +1374,91 @@ test('subagent sessions notify when notifySubagents: true is configured', async 
   server.close()
   assert.equal(posts.length, 1)
   assert.equal(posts[0].sessionId, '8507824f-26e2-440c-9a15-4fe2cb1f5726')
+})
+
+test('user-questions/request dispatches question_requested notification for plan-review and generic questions', async () => {
+  const posts = []
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', () => {
+      posts.push(JSON.parse(body))
+      res.end('ok')
+    })
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${server.address().port}`
+
+  const ctx = context()
+  apply(ctx, { webhooks: { custom: url }, local: false })
+
+  const mainSession = session('session-plan-mode-1')
+  mainSession.title = 'Refactor auth architecture'
+
+  // 1. Plan-review question
+  let waterfallAnswered = false
+  const planRequest = {
+    agent: { session: mainSession },
+    questions: [{
+      id: 'plan-review',
+      header: 'Plan review',
+      question: 'Approve this plan and leave plan mode?',
+      detail: '# Architectural Blueprint\n\n1. Step 1',
+      options: [{ label: 'Approve' }, { label: 'Keep planning' }],
+      intent: { kind: 'plan-review', approve: 'Approve' },
+    }],
+  }
+
+  await ctx.waterfall('user-questions/request', planRequest, async () => {
+    waterfallAnswered = true
+    return { answers: [{ id: 'plan-review', selected: ['Approve'] }] }
+  })
+
+  assert.equal(waterfallAnswered, true, 'waterfall must continue to next handler')
+  await waitFor(() => posts.length === 1)
+  assert.equal(posts[0].kind, 'question_requested')
+  assert.equal(posts[0].sessionId, 'session-plan-mode-1')
+  assert.equal(posts[0].title, 'Refactor auth architecture')
+  assert.equal(posts[0].summary, 'Plan ready for review')
+  assert.ok(posts[0].text.includes('【Question / Plan review】'))
+
+  // 2. Generic ask_user_question
+  const questionRequest = {
+    agent: { session: mainSession },
+    questions: [{
+      id: 'q-1',
+      header: 'Deployment strategy',
+      question: 'Deploy immediately or schedule for off-peak hours?',
+    }],
+  }
+
+  await ctx.waterfall('user-questions/request', questionRequest, async () => {
+    return { answers: [] }
+  })
+
+  await waitFor(() => posts.length === 2)
+  assert.equal(posts[1].kind, 'question_requested')
+  assert.equal(posts[1].sessionId, 'session-plan-mode-1')
+  assert.equal(posts[1].summary, 'Waiting for your answer: Deployment strategy')
+
+  // 3. Excluded session prefix on fresh context
+  const ctxExcluded = context()
+  apply(ctxExcluded, { webhooks: { custom: url }, local: false, excludeSessionPrefixes: ['msgw-'] })
+  const botSession = session('msgw-bridge-session')
+  await ctxExcluded.waterfall('user-questions/request', {
+    agent: { session: botSession },
+    questions: [{ id: 'q-skip', question: 'Skip this' }],
+  }, async () => {})
+
+  // 4. Subagent suppression by default on original context
+  const subagent = session('8507824f-26e2-440c-9a15-4fe2cb1f5726')
+  await ctx.waterfall('user-questions/request', {
+    agent: { session: subagent },
+    questions: [{ id: 'q-sub', question: 'Subagent question' }],
+  }, async () => {})
+
+  await new Promise((r) => setTimeout(r, 60))
+  assert.equal(posts.length, 2, 'excluded prefix and subagent questions should not notify by default')
+
+  server.close()
 })
