@@ -6,3 +6,5 @@ publish.sh export-ignore
 .planning export-ignore
 docs export-ignore
 
+
+scripts export-ignore

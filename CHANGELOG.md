@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-11-14
+
+### Changed
+- **Packaging & Source Hygiene** (#70, #71, #72): Restored internal documentation and tooling (`AGENTS.md`, `index.md`, `deploy.sh`) to Gitea git tracking with strict release exclusion via `.gitattributes export-ignore`. Added `scripts/pack-check.mjs` in `pretest` preventing stray `.tgz` files in checkout and enforcing package size bounds. Excluded `scripts/` from public GitHub mirror while retaining unit tests.
+- **Route Authorization & Push Allowlist Audit** (#73): Directly wired `isTrustedRequest` into `authorizePushRequest` routes. Removed unused test exports `setAllowedPushHosts`/`resetAllowedPushHosts` in favor of declarative schema configuration (`webPush.allowedHosts`). Fixed unhandled catch blocks for preflight compliance.
+
 ## [0.4.8] - 2026-11-01
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "@goodandready/dsh-plugin-notify",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "DSH plugin: audio chimes, cross-session toasts, desktop push, IM webhooks, and web push (PWA) for turn completion, errors, and approvals.",
   "license": "MIT",
   "type": "module",
@@ -32,7 +32,7 @@
     }
   },
   "scripts": {
-    "pretest": "node --check lib/index.js && node --check lib/client.js",
+    "pretest": "node --check lib/index.js && node --check lib/client.js && node scripts/pack-check.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
